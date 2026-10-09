@@ -237,6 +237,25 @@ class _SaleScreenState extends State<SaleScreen> {
     setState(() => line.qty = next);
   }
 
+  void _setQty(String id, double qty) {
+    final line = _cart[id];
+    if (line == null) return;
+    if (qty <= 0) {
+      setState(() => _cart.remove(id));
+      return;
+    }
+    if (qty > line.item.available) {
+      empToast(
+        context,
+        'Only ${empQty(line.item.available)} available for ${line.item.name}.',
+        error: true,
+      );
+      setState(() => line.qty = line.item.available);
+      return;
+    }
+    setState(() => line.qty = qty);
+  }
+
   Future<void> _clearCart({VoidCallback? onChanged}) async {
     if (_cart.isEmpty &&
         _customer == null &&
@@ -931,7 +950,19 @@ class _SaleScreenState extends State<SaleScreen> {
             )
           else
             for (final l in _cart.values)
-              _CartLineRow(line: l, price: _priceOf(l.item), onBump: _bump),
+              _CartLineRow(
+                key: ValueKey(l.item.itemId),
+                line: l,
+                price: _priceOf(l.item),
+                onBump: (id, delta) {
+                  _bump(id, delta);
+                  onChanged?.call();
+                },
+                onSet: (id, qty) {
+                  _setQty(id, qty);
+                  onChanged?.call();
+                },
+              ),
           const Divider(height: 20, color: empBorder),
           Text(
             'Sale type',
@@ -1132,18 +1163,78 @@ class _ItemRow extends StatelessWidget {
 // CART LINE
 // ============================================================================
 
-class _CartLineRow extends StatelessWidget {
+class _CartLineRow extends StatefulWidget {
   final _Line line;
   final double price;
   final void Function(String id, double delta) onBump;
+  final void Function(String id, double qty) onSet;
   const _CartLineRow({
+    super.key,
     required this.line,
     required this.price,
     required this.onBump,
+    required this.onSet,
   });
 
   @override
+  State<_CartLineRow> createState() => _CartLineRowState();
+}
+
+class _CartLineRowState extends State<_CartLineRow> {
+  late final TextEditingController _qtyCtrl;
+  late final FocusNode _qtyFocus;
+
+  @override
+  void initState() {
+    super.initState();
+    _qtyCtrl = TextEditingController(text: empQty(widget.line.qty));
+    _qtyFocus = FocusNode();
+    _qtyFocus.addListener(_onFocusChange);
+  }
+
+  @override
+  void didUpdateWidget(covariant _CartLineRow oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Keep the field in sync when +/- buttons (or clamping) change qty,
+    // but don't stomp on what the user is actively typing.
+    final current = empQty(widget.line.qty);
+    if (!_qtyFocus.hasFocus && _qtyCtrl.text != current) {
+      _qtyCtrl.text = current;
+    }
+  }
+
+  @override
+  void dispose() {
+    _qtyFocus.removeListener(_onFocusChange);
+    _qtyFocus.dispose();
+    _qtyCtrl.dispose();
+    super.dispose();
+  }
+
+  void _onFocusChange() {
+    if (!_qtyFocus.hasFocus) _commit();
+  }
+
+  void _commit() {
+    final raw = _qtyCtrl.text.trim();
+    final parsed = double.tryParse(raw);
+    if (parsed == null) {
+      // Invalid input — revert to the real qty.
+      _qtyCtrl.text = empQty(widget.line.qty);
+      return;
+    }
+    if (parsed != widget.line.qty) {
+      widget.onSet(widget.line.item.itemId, parsed);
+    } else {
+      // Normalise formatting (e.g. "02" -> "2").
+      final formatted = empQty(widget.line.qty);
+      if (_qtyCtrl.text != formatted) _qtyCtrl.text = formatted;
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final line = widget.line;
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
       child: Row(
@@ -1157,7 +1248,7 @@ class _CartLineRow extends StatelessWidget {
                   style: empSans(13.5, weight: FontWeight.w600, color: empInk),
                 ),
                 Text(
-                  '${empMk(price)} each · ${empMk(line.qty * price)}',
+                  '${empMk(widget.price)} each · ${empMk(line.qty * widget.price)}',
                   style: empSans(12, color: empMuted),
                 ),
               ],
@@ -1174,18 +1265,34 @@ class _CartLineRow extends StatelessWidget {
                 IconButton(
                   icon: const Icon(Icons.remove, size: 17),
                   color: empPrimary,
-                  onPressed: () => onBump(line.item.itemId, -1),
+                  onPressed: () => widget.onBump(line.item.itemId, -1),
                   visualDensity: VisualDensity.compact,
                 ),
                 SizedBox(
-                  width: 30,
+                  width: 52,
                   child: Center(
-                    child: Text(
-                      empQty(line.qty),
+                    child: TextField(
+                      controller: _qtyCtrl,
+                      focusNode: _qtyFocus,
+                      textAlign: TextAlign.center,
+                      keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true,
+                      ),
+                      textInputAction: TextInputAction.done,
                       style: empMono(
                         13.5,
                         weight: FontWeight.w700,
                         color: empInk,
+                      ),
+                      decoration: const InputDecoration(
+                        border: InputBorder.none,
+                        isDense: true,
+                        contentPadding: EdgeInsets.symmetric(vertical: 6),
+                      ),
+                      onSubmitted: (_) => _commit(),
+                      onTap: () => _qtyCtrl.selection = TextSelection(
+                        baseOffset: 0,
+                        extentOffset: _qtyCtrl.text.length,
                       ),
                     ),
                   ),
@@ -1195,7 +1302,7 @@ class _CartLineRow extends StatelessWidget {
                   color: empPrimary,
                   onPressed: line.qty + 1 > line.item.available
                       ? null
-                      : () => onBump(line.item.itemId, 1),
+                      : () => widget.onBump(line.item.itemId, 1),
                   visualDensity: VisualDensity.compact,
                 ),
               ],

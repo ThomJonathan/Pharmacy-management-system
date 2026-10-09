@@ -177,17 +177,48 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
   List<Branch> _branches = [];
   String? _selectedBranchId; // null = All Branches
   late Future<AdminHomeData> _dataFuture;
+  bool _wasSelected = true; // Home tab is selected on first build.
 
   @override
   void initState() {
     super.initState();
     _dataFuture = _repo.fetchAdminHomeData();
     _loadBranches();
+    branchListChanged.addListener(_onBranchesChangedExternally);
+  }
+
+  @override
+  void dispose() {
+    branchListChanged.removeListener(_onBranchesChangedExternally);
+    super.dispose();
+  }
+
+  void _onBranchesChangedExternally() {
+    if (mounted) _refresh();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final selected = AdminShellScope.of(context)?.selectedIndex == 0;
+    if (selected && !_wasSelected) _refresh();
+    _wasSelected = selected;
   }
 
   Future<void> _loadBranches() async {
-    final branches = await _repo.fetchBranches();
-    if (mounted) setState(() => _branches = branches);
+    try {
+      final branches = await _repo.fetchBranches();
+      if (!mounted) return;
+      setState(() {
+        _branches = branches;
+        // Drop a filter that no longer exists (deleted/deactivated branch).
+        if (_selectedBranchId != null &&
+            !_branches.any((b) => b.id == _selectedBranchId)) {
+          _selectedBranchId = null;
+          _dataFuture = _repo.fetchAdminHomeData();
+        }
+      });
+    } catch (_) {}
   }
 
   void _onBranchChanged(String? branchId) {
@@ -198,10 +229,24 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
   }
 
   Future<void> _refresh() async {
-    setState(() {
-      _dataFuture = _repo.fetchAdminHomeData(branchId: _selectedBranchId);
-    });
-    await _dataFuture;
+    // Reload the branch filter list AND the dashboard data together so a
+    // newly added branch appears immediately — no app restart needed.
+    try {
+      final branches = await _repo.fetchBranches();
+      if (!mounted) return;
+      setState(() {
+        _branches = branches;
+        if (_selectedBranchId != null &&
+            !_branches.any((b) => b.id == _selectedBranchId)) {
+          _selectedBranchId = null;
+        }
+        _dataFuture = _repo.fetchAdminHomeData(branchId: _selectedBranchId);
+      });
+      await _dataFuture;
+    } catch (_) {
+      // Fetch errors surface through the FutureBuilder's error state.
+      if (mounted) setState(() {});
+    }
   }
 
   @override

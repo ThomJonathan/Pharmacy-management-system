@@ -1,4 +1,10 @@
+import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+
+// Notifies admin dashboard widgets when the branch list changes
+// (create / edit / activate / delete) so they can reload without an
+// app restart. Increment after a successful mutation.
+final branchListChanged = ValueNotifier<int>(0);
 
 // ============================================================================
 // ADMIN MANAGEMENT — REPOSITORY

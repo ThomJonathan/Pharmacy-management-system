@@ -64,6 +64,7 @@ class _BranchesScreenState extends State<BranchesScreen> {
     );
     if (message == null) return;
     await _load(silent: true);
+    branchListChanged.value++;
     if (mounted) showToast(context, message);
   }
 
@@ -81,6 +82,7 @@ class _BranchesScreenState extends State<BranchesScreen> {
     try {
       await _repo.setBranchActive(b.id, !b.isActive);
       await _load(silent: true);
+      branchListChanged.value++;
       if (mounted) showToast(context, b.isActive ? '${b.name} deactivated.' : '${b.name} is active again.');
     } on ManagementException catch (e) {
       if (mounted) showToast(context, e.message, error: true);
@@ -101,6 +103,7 @@ class _BranchesScreenState extends State<BranchesScreen> {
     try {
       await _repo.deleteBranch(b.id);
       await _load(silent: true);
+      branchListChanged.value++;
       if (mounted) showToast(context, '${b.name} deleted.');
     } on ManagementException catch (e) {
       if (mounted) showToast(context, e.message, error: true);

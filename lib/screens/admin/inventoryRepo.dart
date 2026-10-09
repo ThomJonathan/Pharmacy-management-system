@@ -104,6 +104,11 @@ class ItemStock {
   double get stockValue =>
       batches.fold(0, (s, b) => s + b.qtyAvailable * b.buyingPrice);
 
+  /// Expected revenue if everything on hand sold at its retail price.
+  /// Mirrors v_stock_value.stock_value_at_retail in schema.sql.
+  double get sellingValue =>
+      batches.fold(0, (s, b) => s + b.qtyAvailable * b.retailPrice);
+
   /// "Where it is": branch name -> quantity, largest first.
   List<MapEntry<String, double>> get byBranch {
     final map = <String, double>{};
@@ -117,22 +122,19 @@ class ItemStock {
 }
 
 class InventorySummary {
-  final double stockValue;
-  final int lowCount;
-  final int expiring90;
-  final int expired;
+  final double stockValue; // at buying price (capital tied up)
+  final double sellingValue; // at retail price (expected revenue)
+  final double potentialProfit; // selling - cost
   const InventorySummary({
     required this.stockValue,
-    required this.lowCount,
-    required this.expiring90,
-    required this.expired,
+    required this.sellingValue,
+    required this.potentialProfit,
   });
 
   static const empty = InventorySummary(
     stockValue: 0,
-    lowCount: 0,
-    expiring90: 0,
-    expired: 0,
+    sellingValue: 0,
+    potentialProfit: 0,
   );
 }
 
@@ -332,30 +334,16 @@ class InventoryRepository {
   }
 
   InventorySummary summarize(List<ItemStock> items) {
-    var value = 0.0;
-    var low = 0;
-    var exp90 = 0;
-    var expired = 0;
+    var cost = 0.0;
+    var retail = 0.0;
     for (final item in items) {
-      value += item.stockValue;
-      if (item.status == StockStatus.low || item.status == StockStatus.out) {
-        low++;
-      }
-      for (final b in item.batches) {
-        final d = b.daysToExpiry;
-        if (d == null) continue;
-        if (d < 0) {
-          expired++;
-        } else if (d <= 90) {
-          exp90++;
-        }
-      }
+      cost += item.stockValue;
+      retail += item.sellingValue;
     }
     return InventorySummary(
-      stockValue: value,
-      lowCount: low,
-      expiring90: exp90,
-      expired: expired,
+      stockValue: cost,
+      sellingValue: retail,
+      potentialProfit: retail - cost,
     );
   }
 

@@ -459,8 +459,6 @@ class _InventoryScreenState extends State<InventoryScreen> {
     }
   }
 
-  void _jumpToTab(int tab) => setState(() => _tab = tab);
-
   // ---- CSV export: downloads a .csv file onto the user's device ------------
 
   bool _exporting = false;
@@ -949,36 +947,22 @@ class _InventoryScreenState extends State<InventoryScreen> {
     final s = _summary;
     final cards = [
       _SummaryCard(
-        label: 'Stock value',
+        label: 'Stock value (cost)',
         value: 'MK ${_fmtMk(s.stockValue)}',
-        sub: 'at buying price',
+        sub: 'capital tied up',
         icon: Icons.inventory_2_outlined,
-        onTap: null,
       ),
       _SummaryCard(
-        label: 'Low stock',
-        value: '${s.lowCount}',
-        sub: s.lowCount == 1 ? 'item needs reorder' : 'items need reorder',
-        icon: Icons.warning_amber_rounded,
-        alert: s.lowCount > 0,
-        onTap: () => _jumpToTab(1),
+        label: 'Expected revenue',
+        value: 'MK ${_fmtMk(s.sellingValue)}',
+        sub: 'at retail selling price',
+        icon: Icons.point_of_sale_outlined,
       ),
       _SummaryCard(
-        label: 'Expiring ≤ 90d',
-        value: '${s.expiring90}',
-        sub: 'batches at risk',
-        icon: Icons.schedule_outlined,
-        alert: s.expiring90 > 0,
-        onTap: () => _jumpToTab(2),
-      ),
-      _SummaryCard(
-        label: 'Expired',
-        value: '${s.expired}',
-        sub: s.expired > 0 ? 'needs write-off' : 'nothing expired',
-        icon: Icons.dangerous_outlined,
-        alert: s.expired > 0,
-        danger: s.expired > 0,
-        onTap: () => _jumpToTab(2),
+        label: 'Potential profit',
+        value: 'MK ${_fmtMk(s.potentialProfit)}',
+        sub: 'revenue minus cost',
+        icon: Icons.trending_up_outlined,
       ),
     ];
     if (wide) {
@@ -1099,24 +1083,16 @@ class _SummaryCard extends StatelessWidget {
   final String value;
   final String sub;
   final IconData icon;
-  final bool alert;
-  final bool danger;
-  final VoidCallback? onTap;
   const _SummaryCard({
     required this.label,
     required this.value,
     required this.sub,
     required this.icon,
-    this.alert = false,
-    this.danger = false,
-    this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
-    final iconColor = danger ? kDanger : (alert ? kWarn : kPrimary);
-    final iconBg = danger ? kDangerTint : (alert ? kWarnTint : kPrimaryTint);
-    final card = Container(
+    return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: Colors.white,
@@ -1133,14 +1109,11 @@ class _SummaryCard extends StatelessWidget {
                 width: 30,
                 height: 30,
                 decoration: BoxDecoration(
-                  color: iconBg,
+                  color: kPrimaryTint,
                   borderRadius: BorderRadius.circular(8),
                 ),
-                child: Icon(icon, size: 16, color: iconColor),
+                child: Icon(icon, size: 16, color: kPrimary),
               ),
-              const Spacer(),
-              if (onTap != null)
-                const Icon(Icons.chevron_right, size: 16, color: kInkMuted),
             ],
           ),
           const SizedBox(height: 10),
@@ -1155,15 +1128,6 @@ class _SummaryCard extends StatelessWidget {
           ),
           Text(sub, style: sans(10.5, color: kInkMuted)),
         ],
-      ),
-    );
-    if (onTap == null) return card;
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        borderRadius: BorderRadius.circular(12),
-        onTap: onTap,
-        child: card,
       ),
     );
   }
