@@ -348,9 +348,9 @@ class _ErrorState extends StatelessWidget {
     return Container(
       decoration: BoxDecoration(
         border: Border.all(color: _kBorder),
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(4),
       ),
-      padding: const EdgeInsets.all(18),
+      padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -361,7 +361,7 @@ class _ErrorState extends StatelessWidget {
           const SizedBox(height: 6),
           Text(message, style: _sans(12.5, color: _kInkMuted)),
           const SizedBox(height: 12),
-          OutlinedButton(onPressed: onRetry, child: const Text('Retry')),
+          OutlinedButton(onPressed: onRetry, style: outlineButtonStyle(), child: const Text('Retry')),
         ],
       ),
     );
@@ -417,7 +417,7 @@ class _BranchDropdown extends StatelessWidget {
     return Container(
       decoration: BoxDecoration(
         border: Border.all(color: _kBorder),
-        borderRadius: BorderRadius.circular(9),
+        borderRadius: BorderRadius.circular(4),
       ),
       padding: const EdgeInsets.symmetric(horizontal: 12),
       child: DropdownButtonHideUnderline(
@@ -462,56 +462,70 @@ class _MobileLayout extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Column(
-      // stretch (not start) — makes every child, including the branch
-      // sales card and the attention card, take the full column width.
-      // Without this each card's width is only as wide as its own content
-      // happens to lay out to, which is why they could end up mismatched.
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         header,
         const SizedBox(height: 20),
-        Row(
-          children: [
-            Expanded(
-              child: _StatCard(
-                label: 'Sales today',
-                value: 'MK ${_formatMk(data.salesToday)}',
-                sub: '${data.salesTransactionsToday} transactions',
-              ),
+        Container(
+          padding: const EdgeInsets.symmetric(vertical: 16),
+          decoration: const BoxDecoration(
+            border: Border(
+              top: BorderSide(color: _kBorder),
+              bottom: BorderSide(color: _kBorder),
             ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: _StatCard(
-                label: 'Credit given today',
-                value: 'MK ${_formatMk(data.creditToday)}',
-                sub: '${data.creditSalesToday} credit sales',
-                valueColor: _kDebtColor,
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: _StatMetric(
+                      label: 'Sales today',
+                      value: 'MK ${_formatMk(data.salesToday)}',
+                      sub: '${data.salesTransactionsToday} transactions',
+                    ),
+                  ),
+                  Container(width: 1, height: 44, color: _kBorder),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: _StatMetric(
+                      label: 'Credit given today',
+                      value: 'MK ${_formatMk(data.creditToday)}',
+                      sub: '${data.creditSalesToday} credit sales',
+                      valueColor: _kDebtColor,
+                    ),
+                  ),
+                ],
               ),
-            ),
-          ],
+              const SizedBox(height: 14),
+              const Divider(height: 1, color: _kBorder),
+              const SizedBox(height: 14),
+              _StatMetric(
+                label: 'Expenses today',
+                value: 'MK ${_formatMk(data.expensesToday)}',
+                sub:
+                    '${data.expensesCountToday} ${data.expensesCountToday == 1 ? 'expense' : 'expenses'} recorded',
+              ),
+            ],
+          ),
         ),
-        const SizedBox(height: 12),
-        _StatCard(
-          label: 'Expenses today',
-          value: 'MK ${_formatMk(data.expensesToday)}',
-          sub:
-              '${data.expensesCountToday} ${data.expensesCountToday == 1 ? 'expense' : 'expenses'} recorded',
-        ),
-        const SizedBox(height: 22),
+        const SizedBox(height: 24),
         _SectionLabel('Sales by branch'),
-        const SizedBox(height: 10),
+        const SizedBox(height: 6),
         _BranchSalesList(branches: data.branchSales),
-        const SizedBox(height: 22),
+        const SizedBox(height: 24),
         _ExpensesSection(
           expenses: data.recentExpenses,
           expensesToday: data.expensesToday,
         ),
-        const SizedBox(height: 22),
+        const SizedBox(height: 24),
         _AttentionButton(
           count: data.attentionItems.length,
           onTap: () => _openAttentionPage(context),
         ),
-        const SizedBox(height: 12),
+        const SizedBox(height: 10),
         const _StockAccessCard(),
         const SizedBox(height: 24),
       ],
@@ -535,34 +549,45 @@ class _DesktopLayout extends StatelessWidget {
       children: [
         header,
         const SizedBox(height: 24),
-        Row(
-          children: [
-            Expanded(
-              child: _StatCard(
-                label: 'Sales today',
-                value: 'MK ${_formatMk(data.salesToday)}',
-                sub: '${data.salesTransactionsToday} transactions',
-              ),
+        Container(
+          padding: const EdgeInsets.symmetric(vertical: 18),
+          decoration: const BoxDecoration(
+            border: Border(
+              top: BorderSide(color: _kBorder),
+              bottom: BorderSide(color: _kBorder),
             ),
-            const SizedBox(width: 16),
-            Expanded(
-              child: _StatCard(
-                label: 'Credit given today',
-                value: 'MK ${_formatMk(data.creditToday)}',
-                sub: '${data.creditSalesToday} credit sales',
-                valueColor: _kDebtColor,
+          ),
+          child: Row(
+            children: [
+              Expanded(
+                child: _StatMetric(
+                  label: 'Sales today',
+                  value: 'MK ${_formatMk(data.salesToday)}',
+                  sub: '${data.salesTransactionsToday} transactions',
+                ),
               ),
-            ),
-            const SizedBox(width: 16),
-            Expanded(
-              child: _StatCard(
-                label: 'Expenses today',
-                value: 'MK ${_formatMk(data.expensesToday)}',
-                sub:
-                    '${data.expensesCountToday} ${data.expensesCountToday == 1 ? 'expense' : 'expenses'} recorded',
+              Container(width: 1, height: 48, color: _kBorder),
+              const SizedBox(width: 24),
+              Expanded(
+                child: _StatMetric(
+                  label: 'Credit given today',
+                  value: 'MK ${_formatMk(data.creditToday)}',
+                  sub: '${data.creditSalesToday} credit sales',
+                  valueColor: _kDebtColor,
+                ),
               ),
-            ),
-          ],
+              Container(width: 1, height: 48, color: _kBorder),
+              const SizedBox(width: 24),
+              Expanded(
+                child: _StatMetric(
+                  label: 'Expenses today',
+                  value: 'MK ${_formatMk(data.expensesToday)}',
+                  sub:
+                      '${data.expensesCountToday} ${data.expensesCountToday == 1 ? 'expense' : 'expenses'} recorded',
+                ),
+              ),
+            ],
+          ),
         ),
         const SizedBox(height: 28),
         IntrinsicHeight(
@@ -575,12 +600,12 @@ class _DesktopLayout extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     _SectionLabel('Sales by branch'),
-                    const SizedBox(height: 10),
+                    const SizedBox(height: 8),
                     _BranchSalesList(branches: data.branchSales),
                   ],
                 ),
               ),
-              const SizedBox(width: 20),
+              const SizedBox(width: 32),
               Expanded(
                 flex: 6,
                 child: Column(
@@ -610,7 +635,7 @@ class _DesktopLayout extends StatelessWidget {
                         ),
                       ],
                     ),
-                    const SizedBox(height: 10),
+                    const SizedBox(height: 8),
                     _AttentionInlineList(
                       items: data.attentionItems.take(4).toList(),
                     ),
@@ -625,7 +650,7 @@ class _DesktopLayout extends StatelessWidget {
           expenses: data.recentExpenses,
           expensesToday: data.expensesToday,
         ),
-        const SizedBox(height: 12),
+        const SizedBox(height: 16),
         const _StockAccessCard(),
       ],
     );
@@ -647,16 +672,16 @@ class _SectionLabel extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Text(
     text,
-    style: _sans(13, weight: FontWeight.w600, color: _kInkMuted),
+    style: _sans(12.5, weight: FontWeight.w700, color: _kInk),
   );
 }
 
-class _StatCard extends StatelessWidget {
+class _StatMetric extends StatelessWidget {
   final String label;
   final String value;
   final String sub;
   final Color? valueColor;
-  const _StatCard({
+  const _StatMetric({
     required this.label,
     required this.value,
     required this.sub,
@@ -665,29 +690,30 @@ class _StatCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        border: Border.all(color: _kBorder),
-        borderRadius: BorderRadius.circular(12),
-      ),
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(label, style: _sans(12.5, color: _kInkMuted)),
-          const SizedBox(height: 8),
-          Text(
-            value,
-            style: _mono(
-              21,
-              weight: FontWeight.w600,
-              color: valueColor ?? _kInk,
-            ),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          label.toUpperCase(),
+          style: _sans(
+            11,
+            weight: FontWeight.w600,
+            color: _kInkMuted,
+          ).copyWith(letterSpacing: 0.6),
+        ),
+        const SizedBox(height: 6),
+        Text(
+          value,
+          style: _mono(
+            22,
+            weight: FontWeight.w700,
+            color: valueColor ?? _kInk,
           ),
-          const SizedBox(height: 4),
-          Text(sub, style: _sans(11.5, color: _kInkMuted)),
-        ],
-      ),
+        ),
+        const SizedBox(height: 3),
+        Text(sub, style: _sans(12, color: _kInkMuted)),
+      ],
     );
   }
 }
@@ -700,12 +726,8 @@ class _BranchSalesList extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (branches.isEmpty) {
-      return Container(
-        decoration: BoxDecoration(
-          border: Border.all(color: _kBorder),
-          borderRadius: BorderRadius.circular(12),
-        ),
-        padding: const EdgeInsets.all(16),
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 12),
         child: Text('No branches found.', style: _sans(13, color: _kInkMuted)),
       );
     }
@@ -713,58 +735,50 @@ class _BranchSalesList extends StatelessWidget {
       ..sort((a, b) => a.salesToday.compareTo(b.salesToday));
     final maxVal = sorted.last.salesToday <= 0 ? 1.0 : sorted.last.salesToday;
 
-    return Container(
-      decoration: BoxDecoration(
-        border: Border.all(color: _kBorder),
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Column(
-        children: List.generate(sorted.length, (i) {
-          final b = sorted[i];
-          final ratio = (b.salesToday / maxVal).clamp(0.0, 1.0);
-          return Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
-            decoration: BoxDecoration(
-              border: i == sorted.length - 1
-                  ? null
-                  : const Border(bottom: BorderSide(color: _kBorder)),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        b.branchName,
-                        style: _sans(
-                          13.5,
-                          weight: FontWeight.w500,
-                          color: _kInk,
-                        ),
+    return Column(
+      children: List.generate(sorted.length, (i) {
+        final b = sorted[i];
+        final ratio = (b.salesToday / maxVal).clamp(0.0, 1.0);
+        return Container(
+          padding: const EdgeInsets.symmetric(vertical: 10),
+          decoration: const BoxDecoration(
+            border: Border(bottom: BorderSide(color: _kBorder)),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      b.branchName,
+                      style: _sans(
+                        13.5,
+                        weight: FontWeight.w500,
+                        color: _kInk,
                       ),
                     ),
-                    Text(
-                      'MK ${_formatMk(b.salesToday)}',
-                      style: _mono(13.5, weight: FontWeight.w600, color: _kInk),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(3),
-                  child: LinearProgressIndicator(
-                    value: ratio,
-                    minHeight: 5,
-                    backgroundColor: const Color(0xFFE4EAFB),
-                    valueColor: const AlwaysStoppedAnimation<Color>(_kPrimary),
                   ),
+                  Text(
+                    'MK ${_formatMk(b.salesToday)}',
+                    style: _mono(13.5, weight: FontWeight.w600, color: _kInk),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 6),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(2),
+                child: LinearProgressIndicator(
+                  value: ratio,
+                  minHeight: 4,
+                  backgroundColor: const Color(0xFFE4EAFB),
+                  valueColor: const AlwaysStoppedAnimation<Color>(_kPrimary),
                 ),
-              ],
-            ),
-          );
-        }),
-      ),
+              ),
+            ],
+          ),
+        );
+      }),
     );
   }
 }
@@ -818,7 +832,7 @@ class _ExpensesSection extends StatelessWidget {
               ),
           ],
         ),
-        const SizedBox(height: 10),
+        const SizedBox(height: 8),
         _ExpenseList(
           expenses: expenses.take(5).toList(),
           showViewAll: expenses.length > 5,
@@ -836,37 +850,24 @@ class _ExpenseList extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (expenses.isEmpty) {
-      return Container(
-        decoration: BoxDecoration(
-          border: Border.all(color: _kBorder),
-          borderRadius: BorderRadius.circular(12),
-        ),
-        padding: const EdgeInsets.all(16),
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 12),
         child: Text(
           'No expenses recorded for this filter.',
           style: _sans(13, color: _kInkMuted),
         ),
       );
     }
-    return Container(
-      decoration: BoxDecoration(
-        border: Border.all(color: _kBorder),
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Column(
-        children: List.generate(expenses.length, (i) {
-          final last = i == expenses.length - 1 && !showViewAll;
-          return Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-            decoration: BoxDecoration(
-              border: last
-                  ? null
-                  : const Border(bottom: BorderSide(color: _kBorder)),
-            ),
-            child: _ExpenseRow(expense: expenses[i]),
-          );
-        }),
-      ),
+    return Column(
+      children: List.generate(expenses.length, (i) {
+        return Container(
+          padding: const EdgeInsets.symmetric(vertical: 10),
+          decoration: const BoxDecoration(
+            border: Border(bottom: BorderSide(color: _kBorder)),
+          ),
+          child: _ExpenseRow(expense: expenses[i]),
+        );
+      }),
     );
   }
 }
@@ -881,20 +882,12 @@ class _ExpenseRow extends StatelessWidget {
         ? expense.description.trim()
         : expense.category;
     return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.center,
       children: [
-        Container(
-          width: 34,
-          height: 34,
-          decoration: BoxDecoration(
-            color: const Color(0xFFF0F4FD),
-            borderRadius: BorderRadius.circular(8),
-          ),
-          child: Icon(
-            _expenseIcon(expense.category),
-            size: 18,
-            color: _kPrimary,
-          ),
+        Icon(
+          _expenseIcon(expense.category),
+          size: 18,
+          color: _kInkMuted,
         ),
         const SizedBox(width: 12),
         Expanded(
@@ -967,28 +960,20 @@ class _AttentionButton extends StatelessWidget {
     return Material(
       color: Colors.transparent,
       child: InkWell(
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(4),
         onTap: onTap,
         child: Container(
           decoration: BoxDecoration(
             border: Border.all(color: _kBorder),
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(4),
           ),
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 15),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
           child: Row(
             children: [
-              Container(
-                width: 34,
-                height: 34,
-                decoration: BoxDecoration(
-                  color: const Color(0xFFFBF0E2),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: const Icon(
-                  Icons.warning_amber_rounded,
-                  size: 18,
-                  color: _kWarnColor,
-                ),
+              const Icon(
+                Icons.warning_amber_rounded,
+                size: 18,
+                color: _kWarnColor,
               ),
               const SizedBox(width: 12),
               Expanded(
@@ -997,7 +982,7 @@ class _AttentionButton extends StatelessWidget {
                   children: [
                     Text(
                       '$count things need attention',
-                      style: _sans(14, weight: FontWeight.w600, color: _kInk),
+                      style: _sans(13.5, weight: FontWeight.w600, color: _kInk),
                     ),
                     const SizedBox(height: 2),
                     Text(
@@ -1007,7 +992,7 @@ class _AttentionButton extends StatelessWidget {
                   ],
                 ),
               ),
-              const Icon(Icons.chevron_right, size: 20, color: _kInkMuted),
+              const Icon(Icons.chevron_right, size: 18, color: _kInkMuted),
             ],
           ),
         ),
@@ -1038,7 +1023,7 @@ class _StockAccessCard extends StatelessWidget {
         return Material(
           color: Colors.transparent,
           child: InkWell(
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(4),
             onTap: () {
               stockAccessInitialTab.value = 0; // Pending tab
               AdminShell.switchTo(context, 3); // Users tab
@@ -1046,25 +1031,15 @@ class _StockAccessCard extends StatelessWidget {
             child: Container(
               decoration: BoxDecoration(
                 border: Border.all(color: _kBorder),
-                borderRadius: BorderRadius.circular(12),
+                borderRadius: BorderRadius.circular(4),
               ),
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 15),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
               child: Row(
                 children: [
-                  Container(
-                    width: 34,
-                    height: 34,
-                    decoration: BoxDecoration(
-                      color: waiting > 0
-                          ? const Color(0xFFFBF0E2)
-                          : const Color(0xFFE4EAFB),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Icon(
-                      Icons.key_outlined,
-                      size: 18,
-                      color: waiting > 0 ? _kWarnColor : _kPrimary,
-                    ),
+                  Icon(
+                    Icons.key_outlined,
+                    size: 18,
+                    color: waiting > 0 ? _kWarnColor : _kPrimary,
                   ),
                   const SizedBox(width: 12),
                   Expanded(
@@ -1074,7 +1049,7 @@ class _StockAccessCard extends StatelessWidget {
                         Text(
                           title,
                           style: _sans(
-                            14,
+                            13.5,
                             weight: FontWeight.w600,
                             color: _kInk,
                           ),
@@ -1087,7 +1062,7 @@ class _StockAccessCard extends StatelessWidget {
                       ],
                     ),
                   ),
-                  const Icon(Icons.chevron_right, size: 20, color: _kInkMuted),
+                  const Icon(Icons.chevron_right, size: 18, color: _kInkMuted),
                 ],
               ),
             ),
@@ -1106,37 +1081,25 @@ class _AttentionInlineList extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (items.isEmpty) {
-      return Container(
-        decoration: BoxDecoration(
-          border: Border.all(color: _kBorder),
-          borderRadius: BorderRadius.circular(12),
-        ),
-        padding: const EdgeInsets.all(16),
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 12),
         child: Text(
           'Nothing needs attention right now.',
           style: _sans(13, color: _kInkMuted),
         ),
       );
     }
-    return Container(
-      decoration: BoxDecoration(
-        border: Border.all(color: _kBorder),
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Column(
-        children: List.generate(items.length, (i) {
-          final item = items[i];
-          return Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-            decoration: BoxDecoration(
-              border: i == items.length - 1
-                  ? null
-                  : const Border(bottom: BorderSide(color: _kBorder)),
-            ),
-            child: _AttentionRow(item: item),
-          );
-        }),
-      ),
+    return Column(
+      children: List.generate(items.length, (i) {
+        final item = items[i];
+        return Container(
+          padding: const EdgeInsets.symmetric(vertical: 10),
+          decoration: const BoxDecoration(
+            border: Border(bottom: BorderSide(color: _kBorder)),
+          ),
+          child: _AttentionRow(item: item),
+        );
+      }),
     );
   }
 }
@@ -1152,9 +1115,9 @@ class _AttentionRow extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Container(
-          margin: const EdgeInsets.only(top: 3),
-          width: 7,
-          height: 7,
+          margin: const EdgeInsets.only(top: 5),
+          width: 6,
+          height: 6,
           decoration: BoxDecoration(
             shape: BoxShape.circle,
             color: isLow ? _kWarnColor : _kDebtColor,
@@ -1178,10 +1141,10 @@ class _AttentionRow extends StatelessWidget {
           ),
         ),
         Container(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
           decoration: BoxDecoration(
             color: isLow ? const Color(0xFFFBF0E2) : const Color(0xFFF7E8E6),
-            borderRadius: BorderRadius.circular(5),
+            borderRadius: BorderRadius.circular(3),
           ),
           child: Text(
             isLow ? 'Low stock' : 'Expiring',
@@ -1329,16 +1292,16 @@ class _FilterChip extends StatelessWidget {
   Widget build(BuildContext context) {
     return Material(
       color: selected ? _kPrimary : Colors.transparent,
-      borderRadius: BorderRadius.circular(20),
+      borderRadius: BorderRadius.circular(4),
       child: InkWell(
-        borderRadius: BorderRadius.circular(20),
+        borderRadius: BorderRadius.circular(4),
         onTap: onTap,
         child: Container(
           decoration: BoxDecoration(
             border: Border.all(color: selected ? _kPrimary : _kBorder),
-            borderRadius: BorderRadius.circular(20),
+            borderRadius: BorderRadius.circular(4),
           ),
-          padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 7),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
           child: Text(
             label,
             style: _sans(

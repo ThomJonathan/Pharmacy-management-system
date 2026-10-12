@@ -100,7 +100,7 @@ Future<T?> _showEmpSheet<T>(
       context: context,
       builder: (ctx) => Dialog(
         backgroundColor: Colors.white,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
         insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
         clipBehavior: Clip.antiAlias,
         child: ConstrainedBox(
@@ -607,7 +607,7 @@ class _MainAction extends StatelessWidget {
                 minimumSize: const Size(0, 54),
                 side: const BorderSide(color: empBorder),
                 shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
+                  borderRadius: BorderRadius.circular(4),
                 ),
               ),
               icon: const Icon(Icons.add_card_outlined, size: 19),
@@ -895,7 +895,7 @@ class _LookupBlock extends StatelessWidget {
                         ),
                         decoration: BoxDecoration(
                           color: empPrimaryTint,
-                          borderRadius: BorderRadius.circular(7),
+                          borderRadius: BorderRadius.circular(4),
                         ),
                         child: Text(
                           '${empQty(r.qty)} left',
@@ -950,7 +950,7 @@ class _RecentSalesBlock extends StatelessWidget {
                   color: Colors.transparent,
                   child: InkWell(
                     borderRadius: BorderRadius.circular(
-                      i == 0 || i == sales.length - 1 ? 12 : 0,
+                      i == 0 || i == sales.length - 1 ? 4 : 0,
                     ),
                     onTap: () => onTap(s),
                     child: Container(
@@ -1132,7 +1132,7 @@ class _OwingBlock extends StatelessWidget {
   Widget build(BuildContext context) {
     return InkWell(
       onTap: onOpenReports,
-      borderRadius: BorderRadius.circular(12),
+      borderRadius: BorderRadius.circular(4),
       child: EmpCard(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -1144,7 +1144,7 @@ class _OwingBlock extends StatelessWidget {
                   height: 38,
                   decoration: BoxDecoration(
                     color: empPrimaryTint,
-                    borderRadius: BorderRadius.circular(10),
+                    borderRadius: BorderRadius.circular(4),
                   ),
                   child: const Icon(
                     Icons.people_outline,
@@ -1187,7 +1187,7 @@ class _OwingBlock extends StatelessWidget {
                     minimumSize: const Size(0, 44),
                     side: const BorderSide(color: empBorder),
                     shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(10),
+                      borderRadius: BorderRadius.circular(4),
                     ),
                   ),
                   icon: const Icon(Icons.payments_outlined, size: 18),
@@ -1308,7 +1308,7 @@ class _PaymentSheetState extends State<_PaymentSheet> {
                   padding: const EdgeInsets.symmetric(horizontal: 12),
                   decoration: BoxDecoration(
                     border: Border.all(color: empBorder),
-                    borderRadius: BorderRadius.circular(10),
+                    borderRadius: BorderRadius.circular(4),
                     color: Colors.white,
                   ),
                   child: DropdownButtonHideUnderline(
@@ -1341,7 +1341,7 @@ class _PaymentSheetState extends State<_PaymentSheet> {
                   padding: const EdgeInsets.symmetric(horizontal: 12),
                   decoration: BoxDecoration(
                     border: Border.all(color: empBorder),
-                    borderRadius: BorderRadius.circular(10),
+                    borderRadius: BorderRadius.circular(4),
                     color: Colors.white,
                   ),
                   child: DropdownButtonHideUnderline(

@@ -260,7 +260,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: Colors.white,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
         title: Text(
           'How many years?',
           style: sans(16, weight: FontWeight.w700, color: kInk),
@@ -714,7 +714,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
       decoration: BoxDecoration(
         color: Colors.white,
         border: Border.all(color: kBorder),
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(4),
       ),
       padding: const EdgeInsets.symmetric(horizontal: 12),
       child: DropdownButtonHideUnderline(
@@ -751,7 +751,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
       decoration: BoxDecoration(
         color: Colors.white,
         border: Border.all(color: kBorder),
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(4),
       ),
       padding: const EdgeInsets.symmetric(horizontal: 12),
       child: DropdownButtonHideUnderline(
@@ -787,7 +787,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
             decoration: BoxDecoration(
               color: kPrimaryTint,
-              borderRadius: BorderRadius.circular(10),
+              borderRadius: BorderRadius.circular(4),
             ),
             child: Text(
               _period.describe(),
@@ -805,7 +805,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
             decoration: BoxDecoration(
               color: Colors.white,
               border: Border.all(color: kBorder),
-              borderRadius: BorderRadius.circular(10),
+              borderRadius: BorderRadius.circular(4),
             ),
             child: Text(
               '$_scopeName · ${_period.label()}',
@@ -1026,51 +1026,52 @@ class _SummaryCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final valueColor = alert ? kDanger : (highlight ? kPrimary : kInk);
     return Container(
-      padding: const EdgeInsets.all(14),
+      padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: highlight ? kPrimary : Colors.white,
-        border: Border.all(color: highlight ? kPrimary : kBorder),
-        borderRadius: BorderRadius.circular(12),
+        color: Colors.white,
+        border: Border.all(
+          color: highlight ? kPrimary : kBorder,
+          width: highlight ? 1.5 : 1.0,
+        ),
+        borderRadius: BorderRadius.circular(4),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
         children: [
-          Container(
-            width: 30,
-            height: 30,
-            decoration: BoxDecoration(
-              color: highlight ? Colors.white24 : kPrimaryTint,
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Icon(
-              icon,
-              size: 16,
-              color: highlight ? Colors.white : kPrimary,
-            ),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                label.toUpperCase(),
+                style: sans(
+                  10,
+                  weight: FontWeight.w700,
+                  color: highlight ? kPrimary : kInkMuted,
+                ).copyWith(letterSpacing: 0.5),
+              ),
+              Icon(
+                icon,
+                size: 15,
+                color: highlight ? kPrimary : kInkMuted,
+              ),
+            ],
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: 8),
           Text(
             value,
             style: mono(
-              17,
+              18,
               weight: FontWeight.w700,
-              color: highlight ? Colors.white : (alert ? kDanger : kInk),
+              color: valueColor,
             ),
           ),
           const SizedBox(height: 2),
           Text(
-            label,
-            style: sans(
-              11.5,
-              weight: FontWeight.w600,
-              color: highlight ? Colors.white70 : kInkMuted,
-            ),
-          ),
-          Text(
             sub,
-            style: sans(10.5, color: highlight ? Colors.white70 : kInkMuted),
+            style: sans(11, color: kInkMuted),
           ),
         ],
       ),
@@ -1153,13 +1154,10 @@ class _TrendChart extends StatelessWidget {
               ],
               isCurved: true,
               color: kPrimary,
-              barWidth: 3,
+              barWidth: 2,
               isStrokeCapRound: true,
               dotData: const FlDotData(show: false),
-              belowBarData: BarAreaData(
-                show: true,
-                color: kPrimary.withValues(alpha: 0.12),
-              ),
+              belowBarData: BarAreaData(show: false),
             ),
           ],
         ),
@@ -1240,7 +1238,7 @@ class _BranchBars extends StatelessWidget {
                       color: i == 0 ? const Color(0xFFC9A227) : kPrimary,
                       width: 22,
                       borderRadius: const BorderRadius.vertical(
-                        top: Radius.circular(5),
+                        top: Radius.circular(2),
                       ),
                     ),
                   ],
@@ -1277,7 +1275,7 @@ class _SalesTab extends StatelessWidget {
       decoration: BoxDecoration(
         color: Colors.white,
         border: Border.all(color: kBorder),
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(4),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1345,7 +1343,7 @@ class _SalesTab extends StatelessWidget {
               decoration: BoxDecoration(
                 color: Colors.white,
                 border: Border.all(color: kBorder),
-                borderRadius: BorderRadius.circular(12),
+                borderRadius: BorderRadius.circular(4),
               ),
               child: Row(
                 children: [
@@ -1431,7 +1429,7 @@ class _ProfitTab extends StatelessWidget {
             decoration: BoxDecoration(
               color: Colors.white,
               border: Border.all(color: kBorder),
-              borderRadius: BorderRadius.circular(12),
+              borderRadius: BorderRadius.circular(4),
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -1500,7 +1498,7 @@ class _ProfitTab extends StatelessWidget {
       decoration: BoxDecoration(
         color: Colors.white,
         border: Border.all(color: kBorder),
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(4),
       ),
       clipBehavior: Clip.antiAlias,
       child: SingleChildScrollView(
@@ -1671,7 +1669,7 @@ class _BestTab extends StatelessWidget {
                   color: i == 0 ? const Color(0xFFC9A227) : kBorder,
                   width: i == 0 ? 1.5 : 1,
                 ),
-                borderRadius: BorderRadius.circular(12),
+                borderRadius: BorderRadius.circular(4),
               ),
               child: Row(
                 children: [
@@ -1761,7 +1759,7 @@ class _ExpensesTab extends StatelessWidget {
       decoration: BoxDecoration(
         color: Colors.white,
         border: Border.all(color: kBorder),
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(4),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1807,7 +1805,7 @@ class _ExpensesTab extends StatelessWidget {
       decoration: BoxDecoration(
         color: Colors.white,
         border: Border.all(color: kBorder),
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(4),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1879,7 +1877,7 @@ class _ExpensesTab extends StatelessWidget {
           decoration: BoxDecoration(
             color: Colors.white,
             border: Border.all(color: kBorder),
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(4),
           ),
           child: Column(
             children: List.generate(bundle.expenses.length, (i) {
@@ -1968,7 +1966,7 @@ class _DebtsTab extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
           decoration: BoxDecoration(
             color: kPrimaryTint,
-            borderRadius: BorderRadius.circular(10),
+            borderRadius: BorderRadius.circular(4),
           ),
           child: Text(
             'Balances are current — they don’t change with the period selector.',
@@ -2075,7 +2073,7 @@ class _DebtTotalCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: Colors.white,
         border: Border.all(color: kBorder),
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(4),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -2112,15 +2110,15 @@ class _DebtRow extends StatelessWidget {
   Widget build(BuildContext context) {
     return Material(
       color: Colors.white,
-      borderRadius: BorderRadius.circular(12),
+      borderRadius: BorderRadius.circular(4),
       child: InkWell(
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(4),
         onTap: onTap,
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
           decoration: BoxDecoration(
             border: Border.all(color: kBorder),
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(4),
           ),
           child: Row(
             children: [
@@ -2309,7 +2307,7 @@ class _ReportFiltersSheetState extends State<_ReportFiltersSheet> {
           Container(
             decoration: BoxDecoration(
               border: Border.all(color: kBorder),
-              borderRadius: BorderRadius.circular(10),
+              borderRadius: BorderRadius.circular(4),
             ),
             child: Column(
               children: [

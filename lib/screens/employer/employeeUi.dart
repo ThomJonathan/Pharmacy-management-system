@@ -10,7 +10,7 @@ import 'package:google_fonts/google_fonts.dart';
 const double empWideBreakpoint = 760;
 const double empTabletBreakpoint = 600;
 
-const Color empBg = Color(0xFFF7F9FF);
+const Color empBg = Color(0xFFFFFFFF);
 const Color empSurface = Color(0xFFFFFFFF);
 const Color empBorder = Color(0xFFD9E2F5);
 const Color empInk = Color(0xFF0F2038);
@@ -51,7 +51,7 @@ void empToast(BuildContext context, String message, {bool error = false}) {
       content: Text(message, style: empSans(13.5, weight: FontWeight.w500, color: Colors.white)),
       backgroundColor: error ? empDanger : empPrimary,
       behavior: SnackBarBehavior.floating,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
       margin: const EdgeInsets.all(16),
       duration: const Duration(seconds: 4),
     ),
@@ -71,7 +71,7 @@ class EmpCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: empSurface,
         border: Border.all(color: empBorder),
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(4),
       ),
       child: child,
     );
@@ -91,7 +91,7 @@ class EmpEmpty extends StatelessWidget {
           Container(
             width: 38,
             height: 38,
-            decoration: BoxDecoration(color: empPrimaryTint, borderRadius: BorderRadius.circular(10)),
+            decoration: BoxDecoration(color: empPrimaryTint, borderRadius: BorderRadius.circular(4)),
             child: Icon(icon, size: 19, color: empPrimary),
           ),
           const SizedBox(width: 12),
@@ -114,7 +114,7 @@ class EmpSheetFrame extends StatelessWidget {
     return Container(
       decoration: const BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(6)),
       ),
       padding: EdgeInsets.fromLTRB(24, 12, 24, MediaQuery.of(context).viewInsets.bottom + 24),
       child: SingleChildScrollView(
@@ -169,15 +169,15 @@ InputDecoration empField(String label, {String? hint}) => InputDecoration(
       fillColor: Colors.white,
       contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(4),
         borderSide: const BorderSide(color: empBorder),
       ),
       enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(4),
         borderSide: const BorderSide(color: empBorder),
       ),
       focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(4),
         borderSide: const BorderSide(color: empPrimary, width: 1.5),
       ),
     );
@@ -187,6 +187,6 @@ ButtonStyle empPrimaryButton({double height = 48}) => FilledButton.styleFrom(
       foregroundColor: Colors.white,
       minimumSize: Size(0, height),
       textStyle: empSans(15, weight: FontWeight.w600),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
       elevation: 0,
     );

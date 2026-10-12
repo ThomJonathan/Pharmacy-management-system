@@ -144,7 +144,8 @@ class _BranchesScreenState extends State<BranchesScreen> {
         onPressed: () => _addOrEdit(),
         backgroundColor: kPrimary,
         foregroundColor: Colors.white,
-        elevation: 2,
+        elevation: 0,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
         icon: const Icon(Icons.add),
         label: Text('Add branch', style: sans(14, weight: FontWeight.w600, color: Colors.white)),
       ),
@@ -261,15 +262,15 @@ class _BranchCard extends StatelessWidget {
 
     return Material(
       color: Colors.white,
-      borderRadius: BorderRadius.circular(12),
+      borderRadius: BorderRadius.circular(4),
       child: InkWell(
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(4),
         onTap: onTap,
         child: Container(
           padding: const EdgeInsets.fromLTRB(16, 14, 6, 14),
           decoration: BoxDecoration(
             border: Border.all(color: kBorder),
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(4),
           ),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -277,14 +278,10 @@ class _BranchCard extends StatelessWidget {
               Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Container(
-                    width: 42,
-                    height: 42,
-                    decoration: BoxDecoration(
-                      color: dimmed ? kSurface : kPrimaryTint,
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: Icon(Icons.storefront_outlined, size: 21, color: dimmed ? kInkMuted : kPrimary),
+                  Icon(
+                    Icons.storefront_outlined,
+                    size: 20,
+                    color: dimmed ? kInkMuted : kPrimary,
                   ),
                   const SizedBox(width: 12),
                   Expanded(
@@ -295,7 +292,7 @@ class _BranchCard extends StatelessWidget {
                           b.name,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: sans(15, weight: FontWeight.w600, color: dimmed ? kInkMuted : kInk),
+                          style: sans(14.5, weight: FontWeight.w600, color: dimmed ? kInkMuted : kInk),
                         ),
                         const SizedBox(height: 2),
                         Text(
@@ -305,8 +302,12 @@ class _BranchCard extends StatelessWidget {
                           style: sans(12.5, color: kInkMuted),
                         ),
                         if (b.phone?.isNotEmpty ?? false)
-                          Text(b.phone!,
-                              maxLines: 1, overflow: TextOverflow.ellipsis, style: sans(12.5, color: kInkMuted)),
+                          Text(
+                            b.phone!,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: sans(12, color: kInkMuted),
+                          ),
                       ],
                     ),
                   ),
@@ -315,7 +316,7 @@ class _BranchCard extends StatelessWidget {
                     tooltip: 'Branch options',
                     color: Colors.white,
                     surfaceTintColor: Colors.transparent,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
                     onSelected: (v) {
                       switch (v) {
                         case 'staff':
@@ -625,17 +626,17 @@ class _BranchStaffSheetState extends State<_BranchStaffSheet> {
             )
           else if (staff.isEmpty)
               Container(
-                padding: const EdgeInsets.all(18),
-                decoration: BoxDecoration(color: kSurface, borderRadius: BorderRadius.circular(10)),
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(color: kSurface, borderRadius: BorderRadius.circular(4)),
                 child: Text(
                   'Nobody is assigned to this branch yet.',
                   textAlign: TextAlign.center,
-                  style: sans(13.5, color: kInkMuted),
+                  style: sans(13, color: kInkMuted),
                 ),
               )
             else
               Container(
-                decoration: BoxDecoration(border: Border.all(color: kBorder), borderRadius: BorderRadius.circular(12)),
+                decoration: BoxDecoration(border: Border.all(color: kBorder), borderRadius: BorderRadius.circular(4)),
                 child: Column(
                   children: List.generate(staff.length, (i) {
                     final u = staff[i];

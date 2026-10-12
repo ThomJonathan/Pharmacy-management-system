@@ -17,7 +17,7 @@
 --    a basket of items, not one item. Without it, a single `sales` row can
 --    only hold one drug per transaction — a real POS can't work that way.
 --    It's a thin table, doesn't add real complexity.
---
+--a
 -- 3. Suppliers get their own table, not just a text field — you're tracking
 --    payment_status per purchase (paid/partial/pending), and a text field
 --    can't answer "how much do we currently owe this supplier across all
@@ -1904,7 +1904,7 @@ REVOKE ALL ON FUNCTION receive_stock_delivery(uuid, uuid, text, date, jsonb) FRO
 GRANT EXECUTE ON FUNCTION receive_stock_delivery(uuid, uuid, text, date, jsonb) TO authenticated;
 
 
-                                             
+
 -- ----------------------------------------------------------------------------
 -- SELF-SERVICE PROFILE: cashiers can fix their own name/phone only.
 -- Staff cannot UPDATE users directly (admin-only policies), so this

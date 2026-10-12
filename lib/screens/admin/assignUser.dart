@@ -118,7 +118,7 @@ class _AssignUserSheetState extends State<AssignUserSheet> {
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
                   color: kSurface,
-                  borderRadius: BorderRadius.circular(10),
+                  borderRadius: BorderRadius.circular(4),
                 ),
                 child: Row(
                   children: [
@@ -196,14 +196,14 @@ class _AssignUserSheetState extends State<AssignUserSheet> {
                   backgroundColor: Colors.white,
                   side: BorderSide(color: selected ? kPrimary : kBorder),
                   labelStyle: sans(13, weight: FontWeight.w600, color: selected ? Colors.white : kInkMuted),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
                 );
               }).toList(),
             ),
             const SizedBox(height: 16),
             Container(
               padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(color: kPrimaryTint, borderRadius: BorderRadius.circular(10)),
+              decoration: BoxDecoration(color: kPrimaryTint, borderRadius: BorderRadius.circular(4)),
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [

@@ -293,12 +293,11 @@ class _BottomNav extends StatelessWidget {
     final primary = Theme.of(context).colorScheme.primary;
 
     return Padding(
-      padding: const EdgeInsets.fromLTRB(18, 0, 18, 14),
+      padding: const EdgeInsets.only(bottom: 0),
       child: Container(
-        decoration: BoxDecoration(
+        decoration: const BoxDecoration(
           color: Colors.white,
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: _kBorder),
+          border: Border(top: BorderSide(color: _kBorder)),
         ),
         padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
         child: Row(
@@ -309,7 +308,7 @@ class _BottomNav extends StatelessWidget {
             final color = active ? primary : _kInkMuted;
             return Expanded(
               child: InkWell(
-                borderRadius: BorderRadius.circular(10),
+                borderRadius: BorderRadius.circular(4),
                 onTap: () => onSelect(i),
                 child: Padding(
                   padding: const EdgeInsets.symmetric(vertical: 4),
@@ -491,9 +490,9 @@ class _SideNav extends StatelessWidget {
                     padding: const EdgeInsets.only(bottom: 2),
                     child: Material(
                       color: active ? primary : Colors.transparent,
-                      borderRadius: BorderRadius.circular(7),
+                      borderRadius: BorderRadius.circular(4),
                       child: InkWell(
-                        borderRadius: BorderRadius.circular(7),
+                        borderRadius: BorderRadius.circular(4),
                         onTap: () => onSelect(pageIndex),
                         child: Padding(
                           padding: const EdgeInsets.symmetric(
@@ -535,9 +534,9 @@ class _SideNav extends StatelessWidget {
             padding: const EdgeInsets.only(top: 10),
             child: Material(
               color: Colors.transparent,
-              borderRadius: BorderRadius.circular(8),
+              borderRadius: BorderRadius.circular(4),
               child: InkWell(
-                borderRadius: BorderRadius.circular(8),
+                borderRadius: BorderRadius.circular(4),
                 onTap: () => _confirmAndSignOut(context, onSignOut),
                 child: Padding(
                   padding: const EdgeInsets.all(6),

@@ -775,7 +775,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
       decoration: BoxDecoration(
         color: Colors.white,
         border: Border.all(color: kBorder),
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(4),
       ),
       padding: const EdgeInsets.symmetric(horizontal: 12),
       child: DropdownButtonHideUnderline(
@@ -809,7 +809,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
       decoration: BoxDecoration(
         color: Colors.white,
         border: Border.all(color: kBorder),
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(4),
       ),
       padding: const EdgeInsets.symmetric(horizontal: 12),
       child: DropdownButtonHideUnderline(
@@ -1093,40 +1093,37 @@ class _SummaryCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(14),
+      padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         color: Colors.white,
         border: Border.all(color: kBorder),
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(4),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
         children: [
           Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Container(
-                width: 30,
-                height: 30,
-                decoration: BoxDecoration(
-                  color: kPrimaryTint,
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Icon(icon, size: 16, color: kPrimary),
+              Text(
+                label.toUpperCase(),
+                style: sans(
+                  10,
+                  weight: FontWeight.w700,
+                  color: kInkMuted,
+                ).copyWith(letterSpacing: 0.5),
               ),
+              Icon(icon, size: 15, color: kInkMuted),
             ],
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: 8),
           Text(
             value,
-            style: mono(17, weight: FontWeight.w700, color: kInk),
+            style: mono(18, weight: FontWeight.w700, color: kInk),
           ),
           const SizedBox(height: 2),
-          Text(
-            label,
-            style: sans(11.5, weight: FontWeight.w600, color: kInkMuted),
-          ),
-          Text(sub, style: sans(10.5, color: kInkMuted)),
+          Text(sub, style: sans(11, color: kInkMuted)),
         ],
       ),
     );
@@ -1230,7 +1227,7 @@ class _OverviewRow extends StatelessWidget {
       decoration: BoxDecoration(
         color: Colors.white,
         border: Border.all(color: kBorder),
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(4),
       ),
       clipBehavior: Clip.antiAlias,
       child: ExpansionTile(
@@ -1459,7 +1456,7 @@ class _LowStockTab extends StatelessWidget {
             decoration: BoxDecoration(
               color: Colors.white,
               border: Border.all(color: kBorder),
-              borderRadius: BorderRadius.circular(12),
+              borderRadius: BorderRadius.circular(4),
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -1593,7 +1590,7 @@ class _ExpiryTab extends StatelessWidget {
                 decoration: BoxDecoration(
                   color: Colors.white,
                   border: Border.all(color: kBorder),
-                  borderRadius: BorderRadius.circular(12),
+                  borderRadius: BorderRadius.circular(4),
                 ),
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -1686,7 +1683,7 @@ class _MovementsTab extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
             decoration: BoxDecoration(
               color: kPrimaryTint,
-              borderRadius: BorderRadius.circular(10),
+              borderRadius: BorderRadius.circular(4),
             ),
             child: Row(
               children: [
@@ -1704,7 +1701,7 @@ class _MovementsTab extends StatelessWidget {
                 ),
                 InkWell(
                   onTap: onClearActivity,
-                  borderRadius: BorderRadius.circular(14),
+                  borderRadius: BorderRadius.circular(4),
                   child: const Padding(
                     padding: EdgeInsets.all(4),
                     child: Icon(Icons.close, size: 16, color: kPrimary),
@@ -1748,7 +1745,7 @@ class _MovementsTab extends StatelessWidget {
             decoration: BoxDecoration(
               color: Colors.white,
               border: Border.all(color: kBorder),
-              borderRadius: BorderRadius.circular(12),
+              borderRadius: BorderRadius.circular(4),
             ),
             child: Column(
               children: List.generate(movements.length, (i) {
@@ -1767,14 +1764,9 @@ class _MovementsTab extends StatelessWidget {
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Container(
-                        width: 34,
-                        height: 34,
-                        decoration: BoxDecoration(
-                          color: meta.color.withValues(alpha: 0.1),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Icon(meta.icon, size: 17, color: meta.color),
+                      Padding(
+                        padding: const EdgeInsets.only(top: 2),
+                        child: Icon(meta.icon, size: 18, color: meta.color),
                       ),
                       const SizedBox(width: 12),
                       Expanded(
@@ -1853,7 +1845,7 @@ class _PurchasesTab extends StatelessWidget {
           decoration: BoxDecoration(
             color: Colors.white,
             border: Border.all(color: kBorder),
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(4),
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -1924,7 +1916,7 @@ class _PurchasesTab extends StatelessWidget {
               decoration: BoxDecoration(
                 color: Colors.white,
                 border: Border.all(color: kBorder),
-                borderRadius: BorderRadius.circular(12),
+                borderRadius: BorderRadius.circular(4),
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -2070,7 +2062,7 @@ class _CatalogTab extends StatelessWidget {
               decoration: BoxDecoration(
                 color: Colors.white,
                 border: Border.all(color: kBorder),
-                borderRadius: BorderRadius.circular(12),
+                borderRadius: BorderRadius.circular(4),
               ),
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -2192,7 +2184,7 @@ class _FiltersSheetState extends State<_FiltersSheet> {
           Container(
             decoration: BoxDecoration(
               border: Border.all(color: kBorder),
-              borderRadius: BorderRadius.circular(10),
+              borderRadius: BorderRadius.circular(4),
             ),
             child: Column(
               children: [
@@ -2587,7 +2579,7 @@ class _AdjustSheetState extends State<_AdjustSheet> {
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
               color: kSurface,
-              borderRadius: BorderRadius.circular(10),
+              borderRadius: BorderRadius.circular(4),
               border: Border.all(color: kBorder),
             ),
             child: Text(

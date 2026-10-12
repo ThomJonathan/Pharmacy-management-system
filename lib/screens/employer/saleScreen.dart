@@ -497,14 +497,7 @@ class _SaleScreenState extends State<SaleScreen> {
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
       decoration: BoxDecoration(
         color: empPrimary,
-        borderRadius: BorderRadius.circular(14),
-        boxShadow: [
-          BoxShadow(
-            color: empPrimary.withValues(alpha: 0.35),
-            blurRadius: 12,
-            offset: const Offset(0, 4),
-          ),
-        ],
+        borderRadius: BorderRadius.circular(4),
       ),
       child: Row(
         children: [
@@ -536,7 +529,7 @@ class _SaleScreenState extends State<SaleScreen> {
               minimumSize: const Size(0, 46),
               textStyle: empSans(14, weight: FontWeight.w700),
               shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(10),
+                borderRadius: BorderRadius.circular(4),
               ),
             ),
             child: const Text('View cart'),
@@ -659,7 +652,7 @@ class _SaleScreenState extends State<SaleScreen> {
           decoration: BoxDecoration(
             color: empSurface,
             border: Border.all(color: empBorder),
-            borderRadius: BorderRadius.circular(10),
+            borderRadius: BorderRadius.circular(4),
           ),
           padding: const EdgeInsets.all(3),
           child: Row(
@@ -684,9 +677,9 @@ class _SaleScreenState extends State<SaleScreen> {
   Widget _modeTab(String label, bool active, VoidCallback onTap) {
     return Material(
       color: active ? empPrimary : Colors.transparent,
-      borderRadius: BorderRadius.circular(7),
+      borderRadius: BorderRadius.circular(4),
       child: InkWell(
-        borderRadius: BorderRadius.circular(7),
+        borderRadius: BorderRadius.circular(4),
         onTap: onTap,
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
@@ -709,7 +702,7 @@ class _SaleScreenState extends State<SaleScreen> {
         padding: const EdgeInsets.symmetric(horizontal: 12),
         decoration: BoxDecoration(
           border: Border.all(color: empBorder),
-          borderRadius: BorderRadius.circular(10),
+          borderRadius: BorderRadius.circular(4),
           color: Colors.white,
         ),
         child: DropdownButtonHideUnderline(
@@ -858,14 +851,14 @@ class _SaleScreenState extends State<SaleScreen> {
   Widget _chip(String label, bool active, VoidCallback onTap) {
     return Material(
       color: active ? empPrimary : empSurface,
-      borderRadius: BorderRadius.circular(20),
+      borderRadius: BorderRadius.circular(4),
       child: InkWell(
-        borderRadius: BorderRadius.circular(20),
+        borderRadius: BorderRadius.circular(4),
         onTap: onTap,
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
           decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(20),
+            borderRadius: BorderRadius.circular(4),
             border: Border.all(color: active ? empPrimary : empBorder),
           ),
           child: Text(
@@ -1036,14 +1029,14 @@ class _SaleScreenState extends State<SaleScreen> {
   Widget _typeTab(String label, bool active, VoidCallback onTap) {
     return Material(
       color: active ? empPrimaryTint : Colors.transparent,
-      borderRadius: BorderRadius.circular(9),
+      borderRadius: BorderRadius.circular(4),
       child: InkWell(
-        borderRadius: BorderRadius.circular(9),
+        borderRadius: BorderRadius.circular(4),
         onTap: onTap,
         child: Container(
           padding: const EdgeInsets.symmetric(vertical: 10),
           decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(9),
+            borderRadius: BorderRadius.circular(4),
             border: Border.all(
               color: active ? empPrimary : empBorder,
               width: active ? 1.5 : 1,
@@ -1145,7 +1138,7 @@ class _ItemRow extends StatelessWidget {
                   foregroundColor: Colors.white,
                   disabledBackgroundColor: empBorder,
                   shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
+                    borderRadius: BorderRadius.circular(4),
                   ),
                   padding: EdgeInsets.zero,
                 ),
@@ -1257,7 +1250,7 @@ class _CartLineRowState extends State<_CartLineRow> {
           Container(
             decoration: BoxDecoration(
               border: Border.all(color: empBorder),
-              borderRadius: BorderRadius.circular(9),
+              borderRadius: BorderRadius.circular(4),
             ),
             child: Row(
               mainAxisSize: MainAxisSize.min,
@@ -1350,7 +1343,7 @@ class _CustomerBlock extends StatelessWidget {
                 minimumSize: const Size(0, 44),
                 side: const BorderSide(color: empBorder),
                 shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(10),
+                  borderRadius: BorderRadius.circular(4),
                 ),
               ),
               icon: const Icon(Icons.person_add_outlined, size: 18),
@@ -1362,7 +1355,7 @@ class _CustomerBlock extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
             decoration: BoxDecoration(
               color: empPrimaryTint,
-              borderRadius: BorderRadius.circular(10),
+              borderRadius: BorderRadius.circular(4),
             ),
             child: Row(
               children: [
@@ -1836,7 +1829,7 @@ Future<T?> _showSaleSheet<T>(
       context: context,
       builder: (ctx) => Dialog(
         backgroundColor: Colors.white,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
         insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
         clipBehavior: Clip.antiAlias,
         child: ConstrainedBox(
@@ -1857,7 +1850,7 @@ Future<T?> _showSaleSheet<T>(
       builder: (_, ctrl) => Container(
         decoration: const BoxDecoration(
           color: Colors.white,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+          borderRadius: BorderRadius.vertical(top: Radius.circular(6)),
         ),
         child: SingleChildScrollView(controller: ctrl, child: builder(ctx)),
       ),
@@ -2014,7 +2007,7 @@ class _ReceiptSheetState extends State<_ReceiptSheet> {
             padding: const EdgeInsets.all(14),
             decoration: BoxDecoration(
               color: empBg,
-              borderRadius: BorderRadius.circular(10),
+              borderRadius: BorderRadius.circular(4),
             ),
             child: Column(
               children: [
@@ -2167,7 +2160,7 @@ class _ReceiptSheetState extends State<_ReceiptSheet> {
                     minimumSize: const Size(0, 50),
                     side: const BorderSide(color: empBorder),
                     shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
+                      borderRadius: BorderRadius.circular(4),
                     ),
                   ),
                   icon: const Icon(Icons.print_outlined, size: 19),
@@ -2183,7 +2176,7 @@ class _ReceiptSheetState extends State<_ReceiptSheet> {
                     minimumSize: const Size(0, 50),
                     side: const BorderSide(color: empBorder),
                     shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
+                      borderRadius: BorderRadius.circular(4),
                     ),
                   ),
                   icon: const Icon(Icons.share_outlined, size: 19),

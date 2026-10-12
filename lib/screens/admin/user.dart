@@ -324,7 +324,7 @@ class _UsersScreenState extends State<UsersScreen> {
 
     if (wide) {
       return Container(
-        decoration: BoxDecoration(border: Border.all(color: kBorder), borderRadius: BorderRadius.circular(12)),
+        decoration: BoxDecoration(border: Border.all(color: kBorder), borderRadius: BorderRadius.circular(4)),
         clipBehavior: Clip.antiAlias,
         child: Column(
           children: [
@@ -380,7 +380,7 @@ Widget _userMenu(StaffMember u, bool isSelf, ValueChanged<String> onSelected) {
     tooltip: 'User options',
     color: Colors.white,
     surfaceTintColor: Colors.transparent,
-    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
     onSelected: onSelected,
     itemBuilder: (_) => [
       _menuItem(
@@ -506,7 +506,7 @@ class _UserRow extends StatelessWidget {
                   minimumSize: const Size(0, 34),
                   tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                   shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(8),
+                    borderRadius: BorderRadius.circular(4),
                     side: const BorderSide(color: kBorder),
                   ),
                 ),
@@ -545,7 +545,7 @@ class _UserCard extends StatelessWidget {
     final u = user;
     return Container(
       padding: const EdgeInsets.fromLTRB(14, 12, 4, 12),
-      decoration: BoxDecoration(border: Border.all(color: kBorder), borderRadius: BorderRadius.circular(12)),
+      decoration: BoxDecoration(border: Border.all(color: kBorder), borderRadius: BorderRadius.circular(4)),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [

@@ -97,6 +97,7 @@ Future<void> _confirmAndSignOut(
   final confirmed = await showDialog<bool>(
     context: context,
     builder: (ctx) => AlertDialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
       title: const Text('Sign out?'),
       content: const Text('You will need to sign in again to continue.'),
       actions: [
@@ -233,68 +234,56 @@ class _BottomNav extends StatelessWidget {
   Widget build(BuildContext context) {
     final primary = Theme.of(context).colorScheme.primary;
 
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-      child: Container(
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: _kBorder),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.05),
-              blurRadius: 10,
-              offset: const Offset(0, 2),
-            ),
-          ],
-        ),
-        padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 2),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceAround,
-          children: _kDestinations
-              .where((d) => d.pageIndex != 2 && d.pageIndex != 3)
-              .map((d) {
-                // Users and Branches are opened from Settings on mobile.
-                final active =
-                    d.pageIndex == selectedIndex ||
-                    (d.pageIndex == 5 &&
-                        (selectedIndex == 2 || selectedIndex == 3));
-                final color = active ? primary : _kInkMuted;
-                return Expanded(
-                  child: InkWell(
-                    borderRadius: BorderRadius.circular(10),
-                    onTap: () => onSelect(d.pageIndex),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 4),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(
-                            active ? d.activeIcon : d.icon,
-                            size: 20,
+    return Container(
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        border: Border(top: BorderSide(color: _kBorder)),
+      ),
+      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceAround,
+        children: _kDestinations
+            .where((d) => d.pageIndex != 2 && d.pageIndex != 3)
+            .map((d) {
+              // Users and Branches are opened from Settings on mobile.
+              final active =
+                  d.pageIndex == selectedIndex ||
+                  (d.pageIndex == 5 &&
+                      (selectedIndex == 2 || selectedIndex == 3));
+              final color = active ? primary : _kInkMuted;
+              return Expanded(
+                child: InkWell(
+                  onTap: () => onSelect(d.pageIndex),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 3),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          active ? d.activeIcon : d.icon,
+                          size: 20,
+                          color: color,
+                        ),
+                        const SizedBox(height: 3),
+                        Text(
+                          d.label,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: GoogleFonts.ibmPlexSans(
+                            fontSize: 11,
+                            fontWeight: active
+                                ? FontWeight.w600
+                                : FontWeight.w500,
                             color: color,
                           ),
-                          const SizedBox(height: 2),
-                          Text(
-                            d.label,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: GoogleFonts.ibmPlexSans(
-                              fontSize: 10,
-                              fontWeight: active
-                                  ? FontWeight.w600
-                                  : FontWeight.w500,
-                              color: color,
-                            ),
-                          ),
-                        ],
-                      ),
+                        ),
+                      ],
                     ),
                   ),
-                );
-              })
-              .toList(),
-        ),
+                ),
+              );
+            })
+            .toList(),
       ),
     );
   }
@@ -422,9 +411,9 @@ class _SideNav extends StatelessWidget {
               padding: const EdgeInsets.only(bottom: 2),
               child: Material(
                 color: active ? primary : Colors.transparent,
-                borderRadius: BorderRadius.circular(7),
+                borderRadius: BorderRadius.circular(4),
                 child: InkWell(
-                  borderRadius: BorderRadius.circular(7),
+                  borderRadius: BorderRadius.circular(4),
                   onTap: () => onSelect(d.pageIndex),
                   child: Padding(
                     padding: const EdgeInsets.symmetric(
@@ -459,19 +448,19 @@ class _SideNav extends StatelessWidget {
                                   const SizedBox(width: 8),
                                   Container(
                                     padding: const EdgeInsets.symmetric(
-                                      horizontal: 7,
-                                      vertical: 2,
+                                      horizontal: 6,
+                                      vertical: 1.5,
                                     ),
                                     decoration: BoxDecoration(
                                       color: active
                                           ? Colors.white
                                           : const Color(0xFFB4544A),
-                                      borderRadius: BorderRadius.circular(9),
+                                      borderRadius: BorderRadius.circular(3),
                                     ),
                                     child: Text(
                                       '$pending',
                                       style: GoogleFonts.ibmPlexSans(
-                                        fontSize: 11,
+                                        fontSize: 10.5,
                                         fontWeight: FontWeight.w700,
                                         color: active ? primary : Colors.white,
                                       ),
@@ -496,9 +485,9 @@ class _SideNav extends StatelessWidget {
             padding: const EdgeInsets.only(top: 10),
             child: Material(
               color: Colors.transparent,
-              borderRadius: BorderRadius.circular(8),
+              borderRadius: BorderRadius.circular(4),
               child: InkWell(
-                borderRadius: BorderRadius.circular(8),
+                borderRadius: BorderRadius.circular(4),
                 onTap: () => _confirmAndSignOut(context, onSignOut),
                 child: Padding(
                   padding: const EdgeInsets.all(6),

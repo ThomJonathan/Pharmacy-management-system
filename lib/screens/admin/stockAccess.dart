@@ -282,7 +282,7 @@ class _StockAccessSectionState extends State<StockAccessSection> {
       final wide = c.maxWidth >= kWideContentBreakpoint;
       if (wide) {
         return Container(
-          decoration: BoxDecoration(border: Border.all(color: kBorder), borderRadius: BorderRadius.circular(12)),
+          decoration: BoxDecoration(border: Border.all(color: kBorder), borderRadius: BorderRadius.circular(4)),
           clipBehavior: Clip.antiAlias,
           child: Column(
             children: [
@@ -321,7 +321,7 @@ class _StockAccessSectionState extends State<StockAccessSection> {
       final wide = c.maxWidth >= kWideContentBreakpoint;
       if (wide) {
         return Container(
-          decoration: BoxDecoration(border: Border.all(color: kBorder), borderRadius: BorderRadius.circular(12)),
+          decoration: BoxDecoration(border: Border.all(color: kBorder), borderRadius: BorderRadius.circular(4)),
           clipBehavior: Clip.antiAlias,
           child: Column(
             children: [
@@ -372,7 +372,7 @@ class _StockAccessSectionState extends State<StockAccessSection> {
               decoration: BoxDecoration(
                 color: Colors.white,
                 border: Border.all(color: kBorder),
-                borderRadius: BorderRadius.circular(20),
+                borderRadius: BorderRadius.circular(4),
               ),
               child: DropdownButtonHideUnderline(
                 child: DropdownButton<String?>(
@@ -402,11 +402,11 @@ class _StockAccessSectionState extends State<StockAccessSection> {
                   filled: true,
                   fillColor: Colors.white,
                   border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(20),
+                    borderRadius: BorderRadius.circular(4),
                     borderSide: const BorderSide(color: kBorder),
                   ),
                   enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(20),
+                    borderRadius: BorderRadius.circular(4),
                     borderSide: const BorderSide(color: kBorder),
                   ),
                 ),
@@ -462,7 +462,7 @@ class _StockAccessSectionState extends State<StockAccessSection> {
           )
         else
           Container(
-            decoration: BoxDecoration(border: Border.all(color: kBorder), borderRadius: BorderRadius.circular(12)),
+            decoration: BoxDecoration(border: Border.all(color: kBorder), borderRadius: BorderRadius.circular(4)),
             clipBehavior: Clip.antiAlias,
             child: Column(
               children: [
@@ -600,13 +600,13 @@ class _RequestCard extends StatelessWidget {
     final r = request;
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(12),
+      borderRadius: BorderRadius.circular(4),
       child: Container(
         padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
           color: Colors.white,
           border: Border.all(color: kBorder),
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(4),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -638,7 +638,7 @@ class _RequestCard extends StatelessWidget {
                 Expanded(
                   child: OutlinedButton(
                     onPressed: onDeny,
-                    style: outlineButtonStyle(height: 44),
+                    style: outlineButtonStyle(height: 40),
                     child: const Text('Deny'),
                   ),
                 ),
@@ -646,7 +646,7 @@ class _RequestCard extends StatelessWidget {
                 Expanded(
                   child: FilledButton(
                     onPressed: onApprove,
-                    style: primaryButtonStyle(height: 44),
+                    style: primaryButtonStyle(height: 40),
                     child: const Text('Approve'),
                   ),
                 ),
@@ -728,7 +728,7 @@ class _ActiveRow extends StatelessWidget {
                 foregroundColor: kDanger,
                 minimumSize: const Size(0, 36),
                 side: const BorderSide(color: kBorder),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
               ),
               child: const Text('Remove access'),
             ),
@@ -756,13 +756,13 @@ class _ActiveCard extends StatelessWidget {
     final r = request;
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(12),
+      borderRadius: BorderRadius.circular(4),
       child: Container(
         padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
           color: r.isStaleUnlimited ? kWarnTint.withValues(alpha: 0.35) : Colors.white,
           border: Border.all(color: r.isStaleUnlimited ? kWarn : kBorder),
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(4),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -796,7 +796,7 @@ class _ActiveCard extends StatelessWidget {
                 Expanded(
                   child: OutlinedButton(
                     onPressed: onActivity,
-                    style: outlineButtonStyle(height: 44),
+                    style: outlineButtonStyle(height: 40),
                     child: const Text('View activity'),
                   ),
                 ),
@@ -806,9 +806,9 @@ class _ActiveCard extends StatelessWidget {
                     onPressed: onRemove,
                     style: OutlinedButton.styleFrom(
                       foregroundColor: kDanger,
-                      minimumSize: const Size(0, 44),
+                      minimumSize: const Size(0, 40),
                       side: const BorderSide(color: kBorder),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
                     ),
                     child: const Text('Remove access'),
                   ),
@@ -933,7 +933,7 @@ class _DetailBody extends StatelessWidget {
         const SizedBox(height: 16),
         Container(
           padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(color: kSurface, borderRadius: BorderRadius.circular(10)),
+          decoration: BoxDecoration(color: kSurface, borderRadius: BorderRadius.circular(4)),
           child: Text(
             r.reason.isEmpty ? 'No reason given.' : '“${r.reason}”',
             style: sans(13.5, color: kInk, height: 1.45),
@@ -994,7 +994,7 @@ class _DetailBody extends StatelessWidget {
               foregroundColor: kDanger,
               minimumSize: const Size(0, 44),
               side: const BorderSide(color: kBorder),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
             ),
             child: const Text('Remove access'),
           ),
@@ -1048,9 +1048,9 @@ class _DurationSheetState extends State<_DurationSheet> {
       final active = _hours == value;
       return Material(
         color: active ? kPrimaryTint : Colors.transparent,
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(4),
         child: InkWell(
-          borderRadius: BorderRadius.circular(10),
+          borderRadius: BorderRadius.circular(4),
           onTap: () => setState(() {
             _hours = value;
             _error = null;
@@ -1058,7 +1058,7 @@ class _DurationSheetState extends State<_DurationSheet> {
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
             decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(10),
+              borderRadius: BorderRadius.circular(4),
               border: Border.all(color: active ? kPrimary : kBorder, width: active ? 1.5 : 1),
             ),
             child: Row(
@@ -1097,14 +1097,14 @@ class _DurationSheetState extends State<_DurationSheet> {
           const SizedBox(height: 8),
           Material(
             color: _hours == -1 ? kPrimaryTint : Colors.transparent,
-            borderRadius: BorderRadius.circular(10),
+            borderRadius: BorderRadius.circular(4),
             child: InkWell(
-              borderRadius: BorderRadius.circular(10),
+              borderRadius: BorderRadius.circular(4),
               onTap: () => setState(() => _hours = -1),
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
                 decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(10),
+                  borderRadius: BorderRadius.circular(4),
                   border: Border.all(color: _hours == -1 ? kPrimary : kBorder, width: _hours == -1 ? 1.5 : 1),
                 ),
                 child: Row(
@@ -1130,11 +1130,11 @@ class _DurationSheetState extends State<_DurationSheet> {
                           filled: true,
                           fillColor: Colors.white,
                           border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(8),
+                            borderRadius: BorderRadius.circular(4),
                             borderSide: const BorderSide(color: kBorder),
                           ),
                           enabledBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(8),
+                            borderRadius: BorderRadius.circular(4),
                             borderSide: const BorderSide(color: kBorder),
                           ),
                         ),

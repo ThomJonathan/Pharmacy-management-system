@@ -318,7 +318,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             foregroundColor: empDanger,
                             side: const BorderSide(color: empBorder),
                             shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
+                              borderRadius: BorderRadius.circular(4),
                             ),
                           ),
                           icon: const Icon(Icons.logout, size: 19),
@@ -421,7 +421,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       minimumSize: const Size(0, 44),
                       side: const BorderSide(color: empBorder),
                       shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(10),
+                        borderRadius: BorderRadius.circular(4),
                       ),
                     ),
                     child: const Text('Cancel'),
@@ -456,7 +456,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   minimumSize: const Size(0, 44),
                   side: const BorderSide(color: empBorder),
                   shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10),
+                    borderRadius: BorderRadius.circular(4),
                   ),
                 ),
                 icon: const Icon(Icons.edit_outlined, size: 18),
@@ -538,7 +538,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 minimumSize: const Size(0, 44),
                 side: const BorderSide(color: empBorder),
                 shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(10),
+                  borderRadius: BorderRadius.circular(4),
                 ),
               ),
               icon: const Icon(Icons.print_outlined, size: 18),
@@ -655,7 +655,7 @@ Future<T?> _showSettingsSheet<T>(
       context: context,
       builder: (ctx) => Dialog(
         backgroundColor: Colors.white,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
         insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
         clipBehavior: Clip.antiAlias,
         child: ConstrainedBox(

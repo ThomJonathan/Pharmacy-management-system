@@ -275,7 +275,7 @@ class _StockScreenState extends State<StockScreen> {
             Container(
               width: 38,
               height: 38,
-              decoration: BoxDecoration(color: empSuccessTint, borderRadius: BorderRadius.circular(10)),
+              decoration: BoxDecoration(color: empSuccessTint, borderRadius: BorderRadius.circular(4)),
               child: const Icon(Icons.verified_outlined, size: 19, color: empSuccess),
             ),
             const SizedBox(width: 12),
@@ -303,7 +303,7 @@ class _StockScreenState extends State<StockScreen> {
             Container(
               width: 38,
               height: 38,
-              decoration: BoxDecoration(color: empWarnTint, borderRadius: BorderRadius.circular(10)),
+              decoration: BoxDecoration(color: empWarnTint, borderRadius: BorderRadius.circular(4)),
               child: const Icon(Icons.hourglass_top_outlined, size: 19, color: empWarn),
             ),
             const SizedBox(width: 12),
@@ -326,7 +326,7 @@ class _StockScreenState extends State<StockScreen> {
           Container(
             width: 38,
             height: 38,
-            decoration: BoxDecoration(color: empPrimaryTint, borderRadius: BorderRadius.circular(10)),
+            decoration: BoxDecoration(color: empPrimaryTint, borderRadius: BorderRadius.circular(4)),
             child: const Icon(Icons.lock_outline, size: 19, color: empPrimary),
           ),
           const SizedBox(width: 12),
@@ -417,7 +417,7 @@ class _StockScreenState extends State<StockScreen> {
   Widget _pill(String label, Color fg, Color bg) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-      decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(6)),
+      decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(4)),
       child: Text(label, style: empSans(10.5, weight: FontWeight.w700, color: fg)),
     );
   }
@@ -435,7 +435,7 @@ Future<T?> _showStockSheet<T>(BuildContext context, {required WidgetBuilder buil
       context: context,
       builder: (ctx) => Dialog(
         backgroundColor: Colors.white,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
         insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
         clipBehavior: Clip.antiAlias,
         child: ConstrainedBox(
@@ -629,7 +629,7 @@ class _ReceiveSheetState extends State<_ReceiveSheet> {
             padding: const EdgeInsets.symmetric(horizontal: 12),
             decoration: BoxDecoration(
               border: Border.all(color: empBorder),
-              borderRadius: BorderRadius.circular(10),
+              borderRadius: BorderRadius.circular(4),
               color: Colors.white,
             ),
             child: DropdownButtonHideUnderline(
@@ -663,7 +663,7 @@ class _ReceiveSheetState extends State<_ReceiveSheet> {
               foregroundColor: empPrimary,
               minimumSize: const Size(0, 44),
               side: const BorderSide(color: empBorder),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
             ),
             icon: const Icon(Icons.add, size: 18),
             label: const Text('Add another item'),
@@ -692,7 +692,7 @@ class _ReceiveSheetState extends State<_ReceiveSheet> {
       decoration: BoxDecoration(
         color: empBg,
         border: Border.all(color: empBorder),
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(4),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -786,7 +786,7 @@ class _ReceiveSheetState extends State<_ReceiveSheet> {
               foregroundColor: empInk,
               minimumSize: const Size(0, 44),
               side: const BorderSide(color: empBorder),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
             ),
             icon: const Icon(Icons.calendar_month_outlined, size: 18),
             label: Text(l.expiry == null

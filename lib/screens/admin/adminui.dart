@@ -20,11 +20,11 @@ const Color kSuccessTint = Color(0xFFE8F5E9);
 const Color kWarn = Color(0xFFB07A28);
 const Color kWarnTint = Color(0xFFFEF6E8);
 
-TextStyle sans(double size, {FontWeight? weight, Color? color, double? height}) =>
-    GoogleFonts.ibmPlexSans(fontSize: size, fontWeight: weight, color: color, height: height);
+TextStyle sans(double size, {FontWeight? weight, Color? color, double? height, double? letterSpacing}) =>
+    GoogleFonts.ibmPlexSans(fontSize: size, fontWeight: weight, color: color, height: height, letterSpacing: letterSpacing);
 
-TextStyle mono(double size, {FontWeight? weight, Color? color, double? height}) =>
-    GoogleFonts.ibmPlexMono(fontSize: size, fontWeight: weight, color: color, height: height);
+TextStyle mono(double size, {FontWeight? weight, Color? color, double? height, double? letterSpacing}) =>
+    GoogleFonts.ibmPlexMono(fontSize: size, fontWeight: weight, color: color, height: height, letterSpacing: letterSpacing);
 
 InputDecoration fieldDecoration(String label, {String? hint}) => InputDecoration(
       labelText: label,
@@ -33,44 +33,44 @@ InputDecoration fieldDecoration(String label, {String? hint}) => InputDecoration
       hintStyle: sans(13.5, color: kInkMuted),
       filled: true,
       fillColor: Colors.white,
-      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
       border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(4),
         borderSide: const BorderSide(color: kBorder),
       ),
       enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(4),
         borderSide: const BorderSide(color: kBorder),
       ),
       focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(10),
-        borderSide: const BorderSide(color: kPrimary, width: 1.5),
+        borderRadius: BorderRadius.circular(4),
+        borderSide: const BorderSide(color: kPrimary),
       ),
       errorBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(4),
         borderSide: const BorderSide(color: kDanger),
       ),
       focusedErrorBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(10),
-        borderSide: const BorderSide(color: kDanger, width: 1.5),
+        borderRadius: BorderRadius.circular(4),
+        borderSide: const BorderSide(color: kDanger),
       ),
     );
 
-ButtonStyle primaryButtonStyle({double height = 44}) => FilledButton.styleFrom(
+ButtonStyle primaryButtonStyle({double height = 40}) => FilledButton.styleFrom(
       backgroundColor: kPrimary,
       foregroundColor: Colors.white,
       minimumSize: Size(0, height),
-      textStyle: sans(14, weight: FontWeight.w600),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      textStyle: sans(13.5, weight: FontWeight.w600),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
       elevation: 0,
     );
 
-ButtonStyle outlineButtonStyle({double height = 44}) => OutlinedButton.styleFrom(
+ButtonStyle outlineButtonStyle({double height = 40}) => OutlinedButton.styleFrom(
       foregroundColor: kInk,
       minimumSize: Size(0, height),
-      textStyle: sans(14, weight: FontWeight.w600),
+      textStyle: sans(13.5, weight: FontWeight.w600),
       side: const BorderSide(color: kBorder),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
     );
 
 class Avatar extends StatelessWidget {
@@ -163,16 +163,16 @@ class StatusPill extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
       decoration: BoxDecoration(
         color: bg,
-        borderRadius: BorderRadius.circular(6),
+        borderRadius: BorderRadius.circular(3),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
           if (icon != null) ...[
-            Icon(icon, size: 13, color: fg),
+            Icon(icon, size: 12, color: fg),
             const SizedBox(width: 4),
           ],
           Text(
@@ -201,20 +201,20 @@ class FilterPill extends StatelessWidget {
   Widget build(BuildContext context) {
     return Material(
       color: selected ? kPrimary : Colors.white,
-      borderRadius: BorderRadius.circular(20),
+      borderRadius: BorderRadius.circular(4),
       child: InkWell(
-        borderRadius: BorderRadius.circular(20),
+        borderRadius: BorderRadius.circular(4),
         onTap: onTap,
         child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
           decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(20),
+            borderRadius: BorderRadius.circular(4),
             border: Border.all(color: selected ? kPrimary : kBorder),
           ),
           child: Text(
             label,
             style: sans(
-              12.5,
+              12,
               weight: FontWeight.w600,
               color: selected ? Colors.white : kInkMuted,
             ),
@@ -247,21 +247,21 @@ class SearchField extends StatelessWidget {
       decoration: InputDecoration(
         hintText: hint,
         hintStyle: sans(13.5, color: kInkMuted),
-        prefixIcon: const Icon(Icons.search, size: 20, color: kInkMuted),
+        prefixIcon: const Icon(Icons.search, size: 18, color: kInkMuted),
         filled: true,
         fillColor: Colors.white,
-        contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
         border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(10),
+          borderRadius: BorderRadius.circular(4),
           borderSide: const BorderSide(color: kBorder),
         ),
         enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(10),
+          borderRadius: BorderRadius.circular(4),
           borderSide: const BorderSide(color: kBorder),
         ),
         focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(10),
-          borderSide: const BorderSide(color: kPrimary, width: 1.5),
+          borderRadius: BorderRadius.circular(4),
+          borderSide: const BorderSide(color: kPrimary),
         ),
       ),
     );
@@ -328,29 +328,20 @@ class EmptyState extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Container(
-              width: 56,
-              height: 56,
-              decoration: BoxDecoration(
-                color: kSurface,
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: kBorder),
-              ),
-              child: Icon(icon, size: 28, color: kInkMuted),
-            ),
-            const SizedBox(height: 16),
-            Text(title, style: sans(16, weight: FontWeight.w600, color: kInk)),
-            const SizedBox(height: 6),
+            Icon(icon, size: 32, color: kInkMuted),
+            const SizedBox(height: 12),
+            Text(title, style: sans(15, weight: FontWeight.w600, color: kInk)),
+            const SizedBox(height: 5),
             ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 360),
               child: Text(
                 message,
                 textAlign: TextAlign.center,
-                style: sans(13.5, color: kInkMuted, height: 1.4),
+                style: sans(13, color: kInkMuted, height: 1.4),
               ),
             ),
             if (action != null) ...[
-              const SizedBox(height: 20),
+              const SizedBox(height: 16),
               action!,
             ],
           ],
@@ -378,31 +369,23 @@ class ErrorState extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Container(
-              width: 56,
-              height: 56,
-              decoration: BoxDecoration(
-                color: kDangerTint,
-                borderRadius: BorderRadius.circular(14),
-              ),
-              child: const Icon(Icons.error_outline, size: 28, color: kDanger),
-            ),
-            const SizedBox(height: 16),
-            Text('Something went wrong', style: sans(16, weight: FontWeight.w600, color: kInk)),
-            const SizedBox(height: 6),
+            const Icon(Icons.error_outline, size: 32, color: kDanger),
+            const SizedBox(height: 12),
+            Text('Something went wrong', style: sans(15, weight: FontWeight.w600, color: kInk)),
+            const SizedBox(height: 5),
             ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 360),
               child: Text(
                 message,
                 textAlign: TextAlign.center,
-                style: sans(13.5, color: kInkMuted, height: 1.4),
+                style: sans(13, color: kInkMuted, height: 1.4),
               ),
             ),
-            const SizedBox(height: 20),
+            const SizedBox(height: 16),
             OutlinedButton.icon(
               onPressed: onRetry,
               style: outlineButtonStyle(),
-              icon: const Icon(Icons.refresh, size: 18),
+              icon: const Icon(Icons.refresh, size: 16),
               label: const Text('Try again'),
             ),
           ],
@@ -429,7 +412,7 @@ class SheetFrame extends StatelessWidget {
     return Container(
       decoration: const BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(6)),
       ),
       padding: EdgeInsets.fromLTRB(
         24,
@@ -448,10 +431,10 @@ class SheetFrame extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(title, style: sans(18, weight: FontWeight.w700, color: kInk)),
+                      Text(title, style: sans(17, weight: FontWeight.w700, color: kInk)),
                       if (subtitle != null) ...[
-                        const SizedBox(height: 4),
-                        Text(subtitle!, style: sans(13, color: kInkMuted)),
+                        const SizedBox(height: 3),
+                        Text(subtitle!, style: sans(12.5, color: kInkMuted)),
                       ],
                     ],
                   ),
@@ -463,7 +446,7 @@ class SheetFrame extends StatelessWidget {
                 ),
               ],
             ),
-            const SizedBox(height: 20),
+            const SizedBox(height: 18),
             child,
           ],
         ),
@@ -482,7 +465,7 @@ Future<T?> showAdaptiveSheet<T>(
       context: context,
       builder: (ctx) => Dialog(
         backgroundColor: Colors.white,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
         insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
         clipBehavior: Clip.antiAlias,
         child: ConstrainedBox(
@@ -511,21 +494,21 @@ Future<bool> showConfirm(
     context: context,
     builder: (ctx) => AlertDialog(
       backgroundColor: Colors.white,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-      title: Text(title, style: sans(17, weight: FontWeight.w700, color: kInk)),
-      content: Text(message, style: sans(13.5, color: kInkMuted, height: 1.4)),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+      title: Text(title, style: sans(16, weight: FontWeight.w700, color: kInk)),
+      content: Text(message, style: sans(13, color: kInkMuted, height: 1.4)),
       actions: [
         TextButton(
           onPressed: () => Navigator.of(ctx).pop(false),
-          child: Text('Cancel', style: sans(13.5, weight: FontWeight.w600, color: kInkMuted)),
+          child: Text('Cancel', style: sans(13, weight: FontWeight.w600, color: kInkMuted)),
         ),
         FilledButton(
           onPressed: () => Navigator.of(ctx).pop(true),
           style: FilledButton.styleFrom(
             backgroundColor: destructive ? kDanger : kPrimary,
             foregroundColor: Colors.white,
-            textStyle: sans(13.5, weight: FontWeight.w600),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            textStyle: sans(13, weight: FontWeight.w600),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
           ),
           child: Text(confirmLabel),
         ),
@@ -541,11 +524,11 @@ void showToast(BuildContext context, String message, {bool error = false}) {
     SnackBar(
       content: Text(
         message,
-        style: sans(13.5, weight: FontWeight.w500, color: Colors.white),
+        style: sans(13, weight: FontWeight.w500, color: Colors.white),
       ),
       backgroundColor: error ? kDanger : kPrimary,
       behavior: SnackBarBehavior.floating,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
       margin: const EdgeInsets.all(16),
       duration: const Duration(seconds: 4),
     ),

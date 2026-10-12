@@ -27,7 +27,7 @@ Future<bool?> showRecordExpenseSheet(
       context: context,
       builder: (ctx) => Dialog(
         backgroundColor: Colors.white,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
         insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
         clipBehavior: Clip.antiAlias,
         child: ConstrainedBox(
@@ -318,7 +318,7 @@ class _ExpenseScreenState extends State<ExpenseScreen> {
                         height: 36,
                         decoration: BoxDecoration(
                           color: empPrimaryTint,
-                          borderRadius: BorderRadius.circular(9),
+                          borderRadius: BorderRadius.circular(4),
                         ),
                         child: Icon(
                           _categoryIcon(e.category),
@@ -506,7 +506,7 @@ class _ExpenseFormState extends State<_ExpenseForm> {
             padding: const EdgeInsets.symmetric(horizontal: 12),
             decoration: BoxDecoration(
               border: Border.all(color: empBorder),
-              borderRadius: BorderRadius.circular(10),
+              borderRadius: BorderRadius.circular(4),
               color: Colors.white,
             ),
             child: DropdownButtonHideUnderline(
@@ -541,7 +541,7 @@ class _ExpenseFormState extends State<_ExpenseForm> {
               minimumSize: const Size(0, 48),
               side: const BorderSide(color: empBorder),
               shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(10),
+                borderRadius: BorderRadius.circular(4),
               ),
               alignment: Alignment.centerLeft,
             ),
