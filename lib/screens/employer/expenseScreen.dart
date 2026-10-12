@@ -181,7 +181,7 @@ class _ExpenseScreenState extends State<ExpenseScreen> {
                   wide ? 32 : 18,
                   wide ? 28 : 14,
                   wide ? 32 : 18,
-                  24,
+                  32,
                 ),
                 child: Center(
                   child: ConstrainedBox(
@@ -200,31 +200,19 @@ class _ExpenseScreenState extends State<ExpenseScreen> {
   Widget _body(bool wide) {
     if (_loading) {
       return const Padding(
-        padding: EdgeInsets.only(top: 90),
+        padding: EdgeInsets.only(top: 80),
         child: Center(child: CircularProgressIndicator(color: empPrimary)),
       );
     }
     if (_error != null) {
-      return Padding(
-        padding: const EdgeInsets.only(top: 60),
-        child: EmpCard(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Couldn’t load expenses',
-                style: empSans(15, weight: FontWeight.w700, color: empInk),
-              ),
-              const SizedBox(height: 6),
-              Text(_error!, style: empSans(13, color: empMuted)),
-              const SizedBox(height: 14),
-              FilledButton(
-                onPressed: _load,
-                style: empPrimaryButton(height: 44),
-                child: const Text('Retry'),
-              ),
-            ],
-          ),
+      return EmpEmpty(
+        icon: Icons.error_outline,
+        title: 'Couldn’t load expenses',
+        message: _error!,
+        action: OutlinedButton(
+          onPressed: _load,
+          style: empOutlineButton(height: 36),
+          child: const Text('Retry'),
         ),
       );
     }
@@ -241,90 +229,104 @@ class _ExpenseScreenState extends State<ExpenseScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Text(
-          'Expenses',
-          style: empSans(22, weight: FontWeight.w700, color: empInk),
-        ),
-        const SizedBox(height: 4),
         Row(
           children: [
-            const Icon(Icons.storefront_outlined, size: 14, color: empMuted),
-            const SizedBox(width: 5),
             Expanded(
-              child: Text(
-                widget.branchName.isEmpty
-                    ? 'This branch only'
-                    : '${widget.branchName} · this branch only',
-                style: empSans(12.5, color: empMuted),
-                overflow: TextOverflow.ellipsis,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Branch Expenses',
+                    style: empSans(22, weight: FontWeight.w700, color: empInk),
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    widget.branchName.isEmpty
+                        ? 'This branch only'
+                        : '${widget.branchName} · local store spending',
+                    style: empSans(12.5, color: empMuted),
+                  ),
+                ],
               ),
             ),
+            FilledButton.icon(
+              onPressed: _record,
+              style: empPrimaryButton(height: 38),
+              icon: const Icon(Icons.add, size: 17),
+              label: const Text('Record expense'),
+            ),
           ],
         ),
-        const SizedBox(height: 16),
-        SizedBox(
-          height: 54,
-          child: FilledButton.icon(
-            onPressed: _record,
-            style: empPrimaryButton(height: 54),
-            icon: const Icon(Icons.add, size: 20),
-            label: const Text('Record expense'),
+        const SizedBox(height: 18),
+        Container(
+          padding: const EdgeInsets.symmetric(vertical: 14),
+          decoration: const BoxDecoration(
+            border: Border(
+              top: BorderSide(color: empBorder),
+              bottom: BorderSide(color: empBorder),
+            ),
+          ),
+          child: Row(
+            children: [
+              Expanded(
+                child: EmpStatMetric(
+                  label: 'Spent today',
+                  value: empMk(todayTotal),
+                  sub: 'recorded today',
+                  mono: true,
+                ),
+              ),
+              Container(width: 1, height: 44, color: empBorder),
+              const SizedBox(width: 20),
+              Expanded(
+                child: EmpStatMetric(
+                  label: 'Spent this month',
+                  value: empMk(monthTotal),
+                  sub: 'month-to-date total',
+                  mono: true,
+                ),
+              ),
+            ],
           ),
         ),
-        const SizedBox(height: 14),
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Expanded(
-              child: _TotalCard(label: 'Spent today', value: empMk(todayTotal)),
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: _TotalCard(label: 'Spent this month', value: empMk(monthTotal)),
-            ),
-          ],
+        const SizedBox(height: 20),
+        EmpSectionHeader(
+          title: 'Recent expenses (${_rows.length})',
         ),
-        const SizedBox(height: 14),
-        Text(
-          'Recent expenses',
-          style: empSans(13.5, weight: FontWeight.w700, color: empInk),
-        ),
-        const SizedBox(height: 8),
+        const SizedBox(height: 10),
         if (_rows.isEmpty)
           const EmpEmpty(
             icon: Icons.receipt_long_outlined,
-            message: 'No expenses recorded yet.',
+            title: 'No expenses recorded yet',
+            message: 'Tap Record expense to log local branch spending.',
           )
         else
-          EmpCard(
-            padding: EdgeInsets.zero,
+          Container(
+            decoration: BoxDecoration(
+              color: Colors.white,
+              border: Border.all(color: empBorder),
+              borderRadius: BorderRadius.circular(4),
+            ),
             child: Column(
               children: List.generate(_rows.length, (i) {
                 final e = _rows[i];
+                final isLast = i == _rows.length - 1;
                 return Container(
                   padding: const EdgeInsets.symmetric(
                     horizontal: 16,
-                    vertical: 11,
+                    vertical: 12,
                   ),
                   decoration: BoxDecoration(
-                    border: i == _rows.length - 1
+                    border: isLast
                         ? null
                         : const Border(bottom: BorderSide(color: empBorder)),
                   ),
                   child: Row(
                     children: [
-                      Container(
-                        width: 36,
-                        height: 36,
-                        decoration: BoxDecoration(
-                          color: empPrimaryTint,
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                        child: Icon(
-                          _categoryIcon(e.category),
-                          size: 18,
-                          color: empPrimary,
-                        ),
+                      Icon(
+                        _categoryIcon(e.category),
+                        size: 18,
+                        color: empMuted,
                       ),
                       const SizedBox(width: 12),
                       Expanded(
@@ -332,36 +334,34 @@ class _ExpenseScreenState extends State<ExpenseScreen> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              e.category,
+                              (e.description != null &&
+                                      e.description!.trim().isNotEmpty)
+                                  ? e.description!.trim()
+                                  : e.category,
                               style: empSans(
-                                13,
+                                13.5,
                                 weight: FontWeight.w600,
                                 color: empInk,
                               ),
                             ),
-                            if ((e.description ?? '').isNotEmpty)
-                              Text(
-                                e.description!,
-                                style: empSans(12, color: empMuted),
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            const SizedBox(height: 2),
+                            const SizedBox(height: 1),
                             Text(
                               [
+                                e.category,
                                 _dayLabel(e.date),
-                                if (e.recordedBy.isNotEmpty) e.recordedBy,
+                                if (e.recordedBy.trim().isNotEmpty)
+                                  e.recordedBy.trim(),
                               ].join(' · '),
                               style: empSans(11.5, color: empMuted),
                             ),
                           ],
                         ),
                       ),
-                      const SizedBox(width: 10),
+                      const SizedBox(width: 12),
                       Text(
                         empMk(e.amount),
                         style: empMono(
-                          13,
+                          13.5,
                           weight: FontWeight.w700,
                           color: empInk,
                         ),
@@ -373,34 +373,6 @@ class _ExpenseScreenState extends State<ExpenseScreen> {
             ),
           ),
       ],
-    );
-  }
-}
-
-class _TotalCard extends StatelessWidget {
-  final String label;
-  final String value;
-  const _TotalCard({required this.label, required this.value});
-
-  @override
-  Widget build(BuildContext context) {
-    return EmpCard(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Icon(Icons.payments_outlined, size: 18, color: empPrimary),
-          const SizedBox(height: 8),
-          Text(
-            value,
-            style: empMono(17, weight: FontWeight.w700, color: empInk),
-          ),
-          const SizedBox(height: 2),
-          Text(
-            label,
-            style: empSans(12, weight: FontWeight.w600, color: empMuted),
-          ),
-        ],
-      ),
     );
   }
 }
@@ -440,7 +412,6 @@ class _ExpenseFormState extends State<_ExpenseForm> {
       context: context,
       initialDate: initial.isAfter(today) ? today : initial,
       firstDate: DateTime(today.year - 2),
-      // No future dates — an expense must already have happened.
       lastDate: DateTime(today.year, today.month, today.day),
     );
     if (picked == null) return;
@@ -512,7 +483,7 @@ class _ExpenseFormState extends State<_ExpenseForm> {
             child: DropdownButtonHideUnderline(
               child: DropdownButton<String>(
                 value: _category,
-                hint: Text('Category', style: empSans(14, color: empMuted)),
+                hint: Text('Category', style: empSans(13.5, color: empMuted)),
                 isExpanded: true,
                 style: empSans(14, color: empInk),
                 items: [
@@ -538,7 +509,7 @@ class _ExpenseFormState extends State<_ExpenseForm> {
             onPressed: _pickDate,
             style: OutlinedButton.styleFrom(
               foregroundColor: empInk,
-              minimumSize: const Size(0, 48),
+              minimumSize: const Size(0, 42),
               side: const BorderSide(color: empBorder),
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(4),
@@ -547,12 +518,12 @@ class _ExpenseFormState extends State<_ExpenseForm> {
             ),
             icon: const Icon(
               Icons.calendar_today_outlined,
-              size: 18,
+              size: 16,
               color: empMuted,
             ),
             label: Text(
               _dayLabel(_date),
-              style: empSans(14, color: empInk),
+              style: empSans(13.5, color: empInk),
             ),
           ),
           if (_formError != null) ...[

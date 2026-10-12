@@ -8,10 +8,8 @@ import 'employeeUi.dart';
 import 'receipt.dart';
 
 // ============================================================================
-// CASHIER SETTINGS — own account + this device. No business settings.
-//   Profile (name/phone) via update_own_profile(); password + sign-out via
-//   Supabase Auth; everything else lives in device preferences. Sheets keep
-//   the bottom nav visible; dialogs on desktop.
+// CASHIER SETTINGS — own account + this device.
+// Clean, minimal layout structured by typography, dividers and spacing.
 // ============================================================================
 
 class SettingsScreen extends StatefulWidget {
@@ -160,13 +158,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
       await Supabase.instance.client.auth.updateUser(
         UserAttributes(password: result[0]),
       );
-      if (mounted) empToast(context, 'Password changed.');
+      if (mounted) empToast(context, 'Password updated.');
     } on AuthException catch (e) {
       if (!mounted) return;
-      final msg = e.message.toLowerCase();
-      if (msg.contains('reauth') ||
-          msg.contains('session') ||
-          msg.contains('expired') ||
+      if (e.message.toLowerCase().contains('reauthenticate') ||
           e.statusCode == '401') {
         empToast(
           context,
@@ -180,47 +175,37 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Future<void> _signOut() async {
-    if (saleCartCount.value > 0) {
-      final ok = await showDialog<bool>(
-        context: context,
-        builder: (ctx) => AlertDialog(
-          title: const Text('Sign out?'),
-          content: Text(
-            'A sale is in progress (${saleCartCount.value} ${saleCartCount.value == 1 ? 'item' : 'items'} in the cart). Signing out will lose it.',
+    final cartCount = saleCartCount.value;
+    final content = cartCount > 0
+        ? 'A sale is in progress ($cartCount ${cartCount == 1 ? 'item' : 'items'} in the cart). Signing out will discard it.'
+        : 'You will need to sign in again to continue.';
+
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: Colors.white,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+        title: Text('Sign out?', style: empSans(16, weight: FontWeight.w700, color: empInk)),
+        content: Text(content, style: empSans(13, color: empMuted)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: Text('Cancel', style: empSans(13, color: empMuted)),
           ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(ctx).pop(false),
-              child: const Text('Stay'),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            style: FilledButton.styleFrom(
+              backgroundColor: empDanger,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
             ),
-            TextButton(
-              onPressed: () => Navigator.of(ctx).pop(true),
-              child: const Text('Sign out anyway'),
-            ),
-          ],
-        ),
-      );
-      if (ok != true) return;
-    } else {
-      final ok = await showDialog<bool>(
-        context: context,
-        builder: (ctx) => AlertDialog(
-          title: const Text('Sign out?'),
-          content: const Text('You will need to sign in again to continue.'),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(ctx).pop(false),
-              child: const Text('Cancel'),
-            ),
-            TextButton(
-              onPressed: () => Navigator.of(ctx).pop(true),
-              child: const Text('Sign out'),
-            ),
-          ],
-        ),
-      );
-      if (ok != true) return;
-    }
+            child: const Text('Sign out'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true) return;
+
     await Supabase.instance.client.auth.signOut();
     if (mounted) {
       Navigator.of(context).pushNamedAndRemoveUntil('/login', (route) => false);
@@ -256,8 +241,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final format = _paper == 'roll57'
         ? PdfPageFormat.roll57
         : _paper == 'a5'
-        ? PdfPageFormat.a5
-        : PdfPageFormat.roll80;
+            ? PdfPageFormat.a5
+            : PdfPageFormat.roll80;
     try {
       await ReceiptService.printReceipt(sample, format: format);
     } catch (e) {
@@ -280,50 +265,71 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 wide ? 32 : 18,
                 wide ? 28 : 14,
                 wide ? 32 : 18,
-                24,
+                40,
               ),
-              child: Center(
+              child: Align(
+                alignment: Alignment.topCenter,
                 child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 640),
+                  constraints: const BoxConstraints(maxWidth: 680),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                       Text(
                         'Settings',
-                        style: empSans(
-                          22,
-                          weight: FontWeight.w700,
-                          color: empInk,
-                        ),
+                        style: empSans(22, weight: FontWeight.w700, color: empInk),
                       ),
-                      const SizedBox(height: 2),
+                      const SizedBox(height: 3),
                       Text(
-                        'Your account and this device.',
+                        'Your account and device configuration.',
                         style: empSans(12.5, color: empMuted),
                       ),
-                      const SizedBox(height: 16),
-                      _accountCard(),
-                      const SizedBox(height: 12),
-                      _receiptsCard(),
-                      const SizedBox(height: 12),
-                      _saleDefaultsCard(),
-                      const SizedBox(height: 12),
-                      _aboutCard(),
-                      const SizedBox(height: 16),
-                      SizedBox(
-                        height: 50,
-                        child: OutlinedButton.icon(
-                          onPressed: _signOut,
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: empDanger,
-                            side: const BorderSide(color: empBorder),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(4),
-                            ),
+                      const SizedBox(height: 24),
+
+                      // Section 1: Account
+                      _sectionTitle('Account'),
+                      const SizedBox(height: 8),
+                      const Divider(height: 1, color: empBorder),
+                      _accountSection(),
+                      const Divider(height: 1, color: empBorder),
+                      const SizedBox(height: 28),
+
+                      // Section 2: Receipts & Printing
+                      _sectionTitle('Receipts & Printing'),
+                      const SizedBox(height: 8),
+                      const Divider(height: 1, color: empBorder),
+                      _receiptsSection(),
+                      const Divider(height: 1, color: empBorder),
+                      const SizedBox(height: 28),
+
+                      // Section 3: Sale Defaults
+                      _sectionTitle('Sale Defaults'),
+                      const SizedBox(height: 8),
+                      const Divider(height: 1, color: empBorder),
+                      _saleDefaultsSection(),
+                      const Divider(height: 1, color: empBorder),
+                      const SizedBox(height: 28),
+
+                      // Section 4: About
+                      _sectionTitle('About'),
+                      const SizedBox(height: 8),
+                      const Divider(height: 1, color: empBorder),
+                      _aboutSection(),
+                      const Divider(height: 1, color: empBorder),
+                      const SizedBox(height: 32),
+
+                      // Sign out button
+                      OutlinedButton.icon(
+                        onPressed: _signOut,
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: empDanger,
+                          minimumSize: const Size(0, 44),
+                          side: const BorderSide(color: empBorder),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(4),
                           ),
-                          icon: const Icon(Icons.logout, size: 19),
-                          label: const Text('Sign out'),
                         ),
+                        icon: const Icon(Icons.logout, size: 18),
+                        label: const Text('Sign out'),
                       ),
                     ],
                   ),
@@ -336,34 +342,27 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  Widget _cardTitle(String title) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: Text(
-        title,
-        style: empSans(15, weight: FontWeight.w700, color: empInk),
-      ),
+  Widget _sectionTitle(String title) {
+    return Text(
+      title,
+      style: empSans(12, weight: FontWeight.w700, color: empInk),
     );
   }
 
-  Widget _accountCard() {
-    return EmpCard(
+  Widget _accountSection() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 14),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _cardTitle('Account'),
           Row(
             children: [
               CircleAvatar(
-                radius: 24,
-                backgroundColor: empPrimary,
+                radius: 20,
+                backgroundColor: empPrimaryTint,
                 child: Text(
                   _name.trim().isEmpty ? '?' : _name.trim()[0].toUpperCase(),
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 19,
-                  ),
+                  style: empSans(15, weight: FontWeight.w700, color: empPrimary),
                 ),
               ),
               const SizedBox(width: 12),
@@ -373,17 +372,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   children: [
                     Text(
                       _name.isEmpty ? '—' : _name,
-                      style: empSans(
-                        15,
-                        weight: FontWeight.w700,
-                        color: empInk,
-                      ),
+                      style: empSans(14, weight: FontWeight.w600, color: empInk),
                     ),
-                    Text(widget.email, style: empSans(12.5, color: empMuted)),
-                    const SizedBox(height: 2),
+                    Text(widget.email, style: empSans(12, color: empMuted)),
+                    const SizedBox(height: 1),
                     Text(
                       '${_roleLabel(widget.role)} · ${widget.branchName}',
-                      style: empSans(12, color: empMuted),
+                      style: empSans(11.5, color: empMuted),
                     ),
                   ],
                 ),
@@ -397,14 +392,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
               style: empSans(14, color: empInk),
               decoration: empField('Full name'),
             ),
-            const SizedBox(height: 10),
+            const SizedBox(height: 8),
             TextField(
               controller: _phoneCtrl,
               keyboardType: TextInputType.phone,
               style: empSans(14, color: empInk),
               decoration: empField('Phone number'),
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 10),
             Row(
               children: [
                 Expanded(
@@ -416,26 +411,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             _nameCtrl.text = _name;
                             _phoneCtrl.text = _phone;
                           }),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: empInk,
-                      minimumSize: const Size(0, 44),
-                      side: const BorderSide(color: empBorder),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(4),
-                      ),
-                    ),
+                    style: empOutlineButton(height: 38),
                     child: const Text('Cancel'),
                   ),
                 ),
-                const SizedBox(width: 10),
+                const SizedBox(width: 8),
                 Expanded(
                   child: FilledButton(
                     onPressed: _savingProfile ? null : _saveProfile,
-                    style: empPrimaryButton(height: 44),
+                    style: empPrimaryButton(height: 38),
                     child: _savingProfile
                         ? const SizedBox(
-                            width: 19,
-                            height: 19,
+                            width: 18,
+                            height: 18,
                             child: CircularProgressIndicator(
                               strokeWidth: 2,
                               color: Colors.white,
@@ -446,72 +434,77 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
               ],
             ),
-          ] else
-            SizedBox(
-              width: double.infinity,
-              child: OutlinedButton.icon(
-                onPressed: () => setState(() => _editingProfile = true),
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: empPrimary,
-                  minimumSize: const Size(0, 44),
-                  side: const BorderSide(color: empBorder),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(4),
+          ] else ...[
+            Row(
+              children: [
+                OutlinedButton.icon(
+                  onPressed: () => setState(() => _editingProfile = true),
+                  style: empOutlineButton(height: 36),
+                  icon: const Icon(Icons.edit_outlined, size: 15),
+                  label: Text(
+                    _phone.isEmpty ? 'Add phone' : 'Edit profile',
                   ),
                 ),
-                icon: const Icon(Icons.edit_outlined, size: 18),
-                label: Text(
-                  _phone.isEmpty ? 'Add name & phone' : 'Edit name & phone',
+                const SizedBox(width: 8),
+                TextButton.icon(
+                  onPressed: _changePassword,
+                  style: TextButton.styleFrom(
+                    foregroundColor: empPrimary,
+                    minimumSize: const Size(0, 36),
+                  ),
+                  icon: const Icon(Icons.lock_outline, size: 15),
+                  label: const Text('Change password'),
                 ),
-              ),
+              ],
             ),
-          const SizedBox(height: 8),
-          SizedBox(
-            width: double.infinity,
-            child: TextButton.icon(
-              onPressed: _changePassword,
-              style: TextButton.styleFrom(
-                foregroundColor: empPrimary,
-                minimumSize: const Size(0, 44),
-              ),
-              icon: const Icon(Icons.lock_outline, size: 18),
-              label: const Text('Change password'),
-            ),
-          ),
+          ],
         ],
       ),
     );
   }
 
-  Widget _receiptsCard() {
-    return EmpCard(
+  Widget _receiptsSection() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 14),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _cardTitle('Receipts & printing'),
           Text(
-            'Paper size',
-            style: empSans(13, weight: FontWeight.w600, color: empMuted),
+            'Paper format',
+            style: empSans(12, color: empMuted),
           ),
           const SizedBox(height: 8),
-          Wrap(
-            spacing: 8,
+          Row(
             children: [
-              _optionChip('80mm roll', 'roll80', _paper, (v) async {
-                setState(() => _paper = v);
-                await EmpPrefs.setPaperSize(v);
-              }),
-              _optionChip('58mm roll', 'roll57', _paper, (v) async {
-                setState(() => _paper = v);
-                await EmpPrefs.setPaperSize(v);
-              }),
-              _optionChip('A5 paper', 'a5', _paper, (v) async {
-                setState(() => _paper = v);
-                await EmpPrefs.setPaperSize(v);
-              }),
+              EmpFilterPill(
+                label: '80mm roll',
+                selected: _paper == 'roll80',
+                onTap: () async {
+                  setState(() => _paper = 'roll80');
+                  await EmpPrefs.setPaperSize('roll80');
+                },
+              ),
+              const SizedBox(width: 6),
+              EmpFilterPill(
+                label: '58mm roll',
+                selected: _paper == 'roll57',
+                onTap: () async {
+                  setState(() => _paper = 'roll57');
+                  await EmpPrefs.setPaperSize('roll57');
+                },
+              ),
+              const SizedBox(width: 6),
+              EmpFilterPill(
+                label: 'A5 paper',
+                selected: _paper == 'a5',
+                onTap: () async {
+                  setState(() => _paper = 'a5');
+                  await EmpPrefs.setPaperSize('a5');
+                },
+              ),
             ],
           ),
-          const SizedBox(height: 6),
+          const SizedBox(height: 10),
           SwitchListTile(
             value: _autoPrint,
             onChanged: (v) async {
@@ -523,81 +516,80 @@ class _SettingsScreenState extends State<SettingsScreen> {
               style: empSans(13.5, color: empInk),
             ),
             subtitle: Text(
-              'After each sale, without asking.',
+              'Direct print on completing each sale',
               style: empSans(12, color: empMuted),
             ),
             activeThumbColor: empPrimary,
             contentPadding: EdgeInsets.zero,
           ),
-          SizedBox(
-            width: double.infinity,
-            child: OutlinedButton.icon(
-              onPressed: _testPrint,
-              style: OutlinedButton.styleFrom(
-                foregroundColor: empPrimary,
-                minimumSize: const Size(0, 44),
-                side: const BorderSide(color: empBorder),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(4),
-                ),
-              ),
-              icon: const Icon(Icons.print_outlined, size: 18),
-              label: const Text('Test print'),
-            ),
+          const SizedBox(height: 6),
+          OutlinedButton.icon(
+            onPressed: _testPrint,
+            style: empOutlineButton(height: 36),
+            icon: const Icon(Icons.print_outlined, size: 16),
+            label: const Text('Test print'),
           ),
         ],
       ),
     );
   }
 
-  Widget _saleDefaultsCard() {
-    return EmpCard(
+  Widget _saleDefaultsSection() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 14),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _cardTitle('Sale defaults'),
           Text(
-            'Default sale type for new sales',
-            style: empSans(13, weight: FontWeight.w600, color: empMuted),
+            'Default sale mode',
+            style: empSans(12, color: empMuted),
           ),
           const SizedBox(height: 8),
-          Wrap(
-            spacing: 8,
+          Row(
             children: [
-              _optionChip('Retail', 'retail', _saleType, (v) async {
-                setState(() => _saleType = v);
-                await EmpPrefs.setDefaultSaleType(v);
-              }),
-              _optionChip('Wholesale', 'wholesale', _saleType, (v) async {
-                setState(() => _saleType = v);
-                await EmpPrefs.setDefaultSaleType(v);
-              }),
+              EmpFilterPill(
+                label: 'Retail',
+                selected: _saleType == 'retail',
+                onTap: () async {
+                  setState(() => _saleType = 'retail');
+                  await EmpPrefs.setDefaultSaleType('retail');
+                },
+              ),
+              const SizedBox(width: 6),
+              EmpFilterPill(
+                label: 'Wholesale',
+                selected: _saleType == 'wholesale',
+                onTap: () async {
+                  setState(() => _saleType = 'wholesale');
+                  await EmpPrefs.setDefaultSaleType('wholesale');
+                },
+              ),
             ],
           ),
           const SizedBox(height: 4),
           Text(
-            'You can still change it on each sale.',
-            style: empSans(12, color: empMuted),
+            'Individual sales can still toggle type at counter.',
+            style: empSans(11.5, color: empMuted),
           ),
         ],
       ),
     );
   }
 
-  Widget _aboutCard() {
-    return EmpCard(
+  Widget _aboutSection() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 14),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _cardTitle('About'),
           _aboutRow('App version', '1.0.0'),
           _aboutRow('Branch', widget.branchName),
           if (widget.branchPhone.isNotEmpty)
             _aboutRow('Branch phone', widget.branchPhone),
-          const SizedBox(height: 8),
+          const SizedBox(height: 6),
           Text(
-            'For role, branch or access changes, contact your admin.',
-            style: empSans(12, color: empMuted, height: 1.4),
+            'For account, branch or role reassignments, contact your admin.',
+            style: empSans(12, color: empMuted),
           ),
         ],
       ),
@@ -606,7 +598,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Widget _aboutRow(String label, String value) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 6),
+      padding: const EdgeInsets.symmetric(vertical: 3),
       child: Row(
         children: [
           Expanded(
@@ -618,29 +610,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
         ],
       ),
-    );
-  }
-
-  Widget _optionChip(
-    String label,
-    String value,
-    String group,
-    ValueChanged<String> onPick,
-  ) {
-    final active = group == value;
-    return ChoiceChip(
-      label: Text(label),
-      selected: active,
-      onSelected: (_) => onPick(value),
-      selectedColor: empPrimary,
-      backgroundColor: empSurface,
-      side: BorderSide(color: active ? empPrimary : empBorder),
-      labelStyle: empSans(
-        13,
-        weight: FontWeight.w600,
-        color: active ? Colors.white : empMuted,
-      ),
-      showCheckmark: false,
     );
   }
 }

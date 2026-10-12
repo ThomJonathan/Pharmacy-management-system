@@ -125,16 +125,48 @@ Future<void> _confirmAndSignOut(
   final confirmed = await showDialog<bool>(
     context: context,
     builder: (ctx) => AlertDialog(
-      title: const Text('Sign out?'),
-      content: const Text('You will need to sign in again to continue.'),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+      title: Text(
+        'Sign out?',
+        style: GoogleFonts.ibmPlexSans(
+          fontSize: 16,
+          fontWeight: FontWeight.w700,
+          color: const Color(0xFF0F172A),
+        ),
+      ),
+      content: Text(
+        'You will need to sign in again to continue.',
+        style: GoogleFonts.ibmPlexSans(
+          fontSize: 13.5,
+          color: _kInkMuted,
+        ),
+      ),
       actions: [
         TextButton(
           onPressed: () => Navigator.of(ctx).pop(false),
-          child: const Text('Cancel'),
+          child: Text(
+            'Cancel',
+            style: GoogleFonts.ibmPlexSans(
+              fontWeight: FontWeight.w600,
+              color: _kInkMuted,
+            ),
+          ),
         ),
-        TextButton(
+        FilledButton(
           onPressed: () => Navigator.of(ctx).pop(true),
-          child: const Text('Sign out'),
+          style: FilledButton.styleFrom(
+            backgroundColor: const Color(0xFFDC2626),
+            foregroundColor: Colors.white,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(4),
+            ),
+          ),
+          child: Text(
+            'Sign out',
+            style: GoogleFonts.ibmPlexSans(
+              fontWeight: FontWeight.w600,
+            ),
+          ),
         ),
       ],
     ),

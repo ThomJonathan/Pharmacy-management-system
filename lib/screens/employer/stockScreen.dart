@@ -8,8 +8,7 @@ import 'stockRepo.dart';
 // ============================================================================
 // CASHIER STOCK — own-branch stock list + receiving deliveries.
 //   Receiving needs stock access (admin grant); without it the screen is
-//   read-only with a "Request access" path. New stock appears on the sales
-//   list immediately after receive_stock_delivery() commits.
+//   read-only with a "Request access" path. Clean, minimal presentation.
 // ============================================================================
 
 class StockScreen extends StatefulWidget {
@@ -135,11 +134,20 @@ class _StockScreenState extends State<StockScreen> {
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('End your stock access?'),
-        content: const Text('You will no longer be able to receive stock.'),
+        backgroundColor: Colors.white,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+        title: Text('End your stock access?', style: empSans(16, weight: FontWeight.w700, color: empInk)),
+        content: Text('You will no longer be able to receive stock until granted again.', style: empSans(13, color: empMuted)),
         actions: [
-          TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Keep it')),
-          TextButton(onPressed: () => Navigator.of(ctx).pop(true), child: const Text('I’m done')),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: Text('Keep it', style: empSans(13, color: empMuted)),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            style: empPrimaryButton(height: 36),
+            child: const Text('I’m done'),
+          ),
         ],
       ),
     );
@@ -161,9 +169,8 @@ class _StockScreenState extends State<StockScreen> {
       builder: (_) => _ReceiveSheet(repo: _repo, branchId: bid),
     );
     if (done == true && mounted) {
-      stockChanged.value++; // sale list + home pick up the new quantities
       await _load(silent: true);
-      if (mounted) empToast(context, 'Delivery received — items are on the sales list.');
+      if (mounted) empToast(context, 'Stock received and available for sale.');
     }
   }
 
@@ -182,7 +189,12 @@ class _StockScreenState extends State<StockScreen> {
               final wide = c.maxWidth >= empWideBreakpoint;
               return SingleChildScrollView(
                 physics: const AlwaysScrollableScrollPhysics(),
-                padding: EdgeInsets.fromLTRB(wide ? 32 : 18, wide ? 28 : 14, wide ? 32 : 18, 24),
+                padding: EdgeInsets.fromLTRB(
+                  wide ? 32 : 18,
+                  wide ? 28 : 14,
+                  wide ? 32 : 18,
+                  32,
+                ),
                 child: Center(
                   child: ConstrainedBox(
                     constraints: const BoxConstraints(maxWidth: 1080),
@@ -200,43 +212,63 @@ class _StockScreenState extends State<StockScreen> {
   Widget _body(bool wide) {
     if (_loading) {
       return const Padding(
-        padding: EdgeInsets.only(top: 90),
+        padding: EdgeInsets.only(top: 80),
         child: Center(child: CircularProgressIndicator(color: empPrimary)),
       );
     }
     if (_error != null || _branchId == null) {
-      return EmpCard(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('Couldn’t load stock', style: empSans(15, weight: FontWeight.w700, color: empInk)),
-            const SizedBox(height: 6),
-            Text(_error ?? '', style: empSans(13, color: empMuted)),
-            const SizedBox(height: 14),
-            FilledButton(onPressed: _load, style: empPrimaryButton(height: 44), child: const Text('Retry')),
-          ],
+      return EmpEmpty(
+        icon: Icons.error_outline,
+        title: 'Couldn’t load stock',
+        message: _error ?? 'No branch assigned.',
+        action: OutlinedButton(
+          onPressed: _load,
+          style: empOutlineButton(height: 36),
+          child: const Text('Retry'),
         ),
       );
     }
+
+    final lowCount = _rows.where((r) => r.low).length;
+    final expCount = _rows.where((r) => r.expiring).length;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Text('Stock', style: empSans(22, weight: FontWeight.w700, color: empInk)),
-        const SizedBox(height: 2),
-        Text(widget.branchName, style: empSans(12.5, color: empMuted)),
-        const SizedBox(height: 14),
-        _accessBanner(),
-        const SizedBox(height: 14),
-        SizedBox(
-          height: 54,
-          child: FilledButton.icon(
-            onPressed: _canReceive ? _receive : null,
-            style: empPrimaryButton(height: 54),
-            icon: const Icon(Icons.add_box_outlined, size: 21),
-            label: const Text('Receive stock'),
-          ),
+        Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Branch Stock', style: empSans(22, weight: FontWeight.w700, color: empInk)),
+                  const SizedBox(height: 3),
+                  Text(
+                    '${widget.branchName} · ${_rows.length} ${_rows.length == 1 ? 'item' : 'items'} in inventory',
+                    style: empSans(12.5, color: empMuted),
+                  ),
+                ],
+              ),
+            ),
+            if (_canReceive)
+              FilledButton.icon(
+                onPressed: _receive,
+                style: empPrimaryButton(height: 38),
+                icon: const Icon(Icons.add_box_outlined, size: 17),
+                label: const Text('Receive stock'),
+              )
+            else if (_access.state != OwnAccessState.pending)
+              OutlinedButton.icon(
+                onPressed: _requestAccess,
+                style: empOutlineButton(height: 38),
+                icon: const Icon(Icons.lock_open_outlined, size: 16),
+                label: const Text('Request receive access'),
+              ),
+          ],
         ),
-        const SizedBox(height: 14),
+        const SizedBox(height: 16),
+        _accessBanner(),
+        const SizedBox(height: 16),
         TextField(
           controller: _searchCtrl,
           onChanged: (v) {
@@ -244,22 +276,37 @@ class _StockScreenState extends State<StockScreen> {
             _load(silent: true);
           },
           style: empSans(14, color: empInk),
-          decoration: empField('Search stock…').copyWith(
-            prefixIcon: const Icon(Icons.search, size: 20, color: empMuted),
+          decoration: empField('Search stock by drug or item name…').copyWith(
+            prefixIcon: const Icon(Icons.search, size: 18, color: empMuted),
           ),
         ),
-        const SizedBox(height: 10),
-        Row(
-          children: [
-            _filterChip('All', 'all'),
-            const SizedBox(width: 8),
-            _filterChip('Low stock', 'low'),
-            const SizedBox(width: 8),
-            _filterChip('Expiring', 'expiring'),
-          ],
-        ),
         const SizedBox(height: 12),
-        _list(),
+        SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: Row(
+            children: [
+              EmpFilterPill(
+                label: 'All (${_rows.length})',
+                selected: _chip == 'all',
+                onTap: () => setState(() => _chip = 'all'),
+              ),
+              const SizedBox(width: 8),
+              EmpFilterPill(
+                label: 'Low stock ($lowCount)',
+                selected: _chip == 'low',
+                onTap: () => setState(() => _chip = 'low'),
+              ),
+              const SizedBox(width: 8),
+              EmpFilterPill(
+                label: 'Expiring ($expCount)',
+                selected: _chip == 'expiring',
+                onTap: () => setState(() => _chip = 'expiring'),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 16),
+        _list(wide),
       ],
     );
   }
@@ -267,119 +314,89 @@ class _StockScreenState extends State<StockScreen> {
   Widget _accessBanner() {
     if (_canReceive && _access.state == OwnAccessState.active) {
       final until = _access.expiresAt == null
-          ? 'until the admin removes it'
+          ? 'until removed by admin'
           : 'until ${_fmtTime(_access.expiresAt!)}';
-      return EmpCard(
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          border: Border.all(color: empBorder),
+          borderRadius: BorderRadius.circular(4),
+        ),
         child: Row(
           children: [
-            Container(
-              width: 38,
-              height: 38,
-              decoration: BoxDecoration(color: empSuccessTint, borderRadius: BorderRadius.circular(4)),
-              child: const Icon(Icons.verified_outlined, size: 19, color: empSuccess),
-            ),
+            EmpStatusPill.active('Active permission'),
             const SizedBox(width: 12),
             Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('You can receive stock', style: empSans(13.5, weight: FontWeight.w700, color: empInk)),
-                  Text('Access lasts $until.', style: empSans(12, color: empMuted)),
-                ],
+              child: Text(
+                'You can receive deliveries ($until).',
+                style: empSans(12.5, color: empMuted),
               ),
             ),
             TextButton(
               onPressed: _endAccess,
-              child: Text('I’m done', style: empSans(13, weight: FontWeight.w700, color: empPrimary)),
+              style: TextButton.styleFrom(
+                foregroundColor: empInk,
+                minimumSize: const Size(0, 32),
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+              ),
+              child: Text('Done receiving', style: empSans(12, weight: FontWeight.w600, color: empPrimary)),
             ),
           ],
         ),
       );
     }
     if (_access.state == OwnAccessState.pending) {
-      return EmpCard(
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          border: Border.all(color: empBorder),
+          borderRadius: BorderRadius.circular(4),
+        ),
         child: Row(
           children: [
-            Container(
-              width: 38,
-              height: 38,
-              decoration: BoxDecoration(color: empWarnTint, borderRadius: BorderRadius.circular(4)),
-              child: const Icon(Icons.hourglass_top_outlined, size: 19, color: empWarn),
-            ),
+            EmpStatusPill.warning('Pending review'),
             const SizedBox(width: 12),
             Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('Request waiting', style: empSans(13.5, weight: FontWeight.w700, color: empInk)),
-                  Text('The admin hasn’t decided yet.', style: empSans(12, color: empMuted)),
-                ],
+              child: Text(
+                'Access request sent. Waiting for admin approval.',
+                style: empSans(12.5, color: empMuted),
               ),
             ),
           ],
         ),
       );
     }
-    return EmpCard(
-      child: Row(
-        children: [
-          Container(
-            width: 38,
-            height: 38,
-            decoration: BoxDecoration(color: empPrimaryTint, borderRadius: BorderRadius.circular(4)),
-            child: const Icon(Icons.lock_outline, size: 19, color: empPrimary),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('Receiving needs permission', style: empSans(13.5, weight: FontWeight.w700, color: empInk)),
-                Text('Ask the admin when a delivery arrives.', style: empSans(12, color: empMuted)),
-              ],
-            ),
-          ),
-          FilledButton(
-            onPressed: _requestAccess,
-            style: empPrimaryButton(height: 40),
-            child: const Text('Request'),
-          ),
-        ],
-      ),
-    );
+    return const SizedBox.shrink();
   }
 
-  Widget _filterChip(String label, String value) {
-    final active = _chip == value;
-    return ChoiceChip(
-      label: Text(label),
-      selected: active,
-      onSelected: (_) => setState(() => _chip = value),
-      selectedColor: empPrimary,
-      backgroundColor: empSurface,
-      side: BorderSide(color: active ? empPrimary : empBorder),
-      labelStyle: empSans(13, weight: FontWeight.w600, color: active ? Colors.white : empMuted),
-      showCheckmark: false,
-    );
-  }
-
-  Widget _list() {
+  Widget _list(bool wide) {
     final rows = _visible;
     if (rows.isEmpty) {
       return EmpEmpty(
         icon: Icons.inventory_2_outlined,
-        message: _query.trim().isEmpty ? 'Nothing here for this filter.' : 'No stock found for “${_query.trim()}”.',
+        title: 'No stock found',
+        message: _query.trim().isEmpty
+            ? 'No items match the selected filter.'
+            : 'No stock found for “${_query.trim()}”.',
       );
     }
-    return EmpCard(
-      padding: EdgeInsets.zero,
+
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        border: Border.all(color: empBorder),
+        borderRadius: BorderRadius.circular(4),
+      ),
       child: Column(
         children: List.generate(rows.length, (i) {
           final r = rows[i];
+          final isLast = i == rows.length - 1;
           return Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 11),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             decoration: BoxDecoration(
-              border: i == rows.length - 1 ? null : const Border(bottom: BorderSide(color: empBorder)),
+              border: isLast ? null : const Border(bottom: BorderSide(color: empBorder)),
             ),
             child: Row(
               children: [
@@ -387,38 +404,54 @@ class _StockScreenState extends State<StockScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(r.name, style: empSans(13.5, weight: FontWeight.w600, color: empInk)),
-                      const SizedBox(height: 2),
+                      Text(
+                        r.name,
+                        style: empSans(13.5, weight: FontWeight.w600, color: empInk),
+                      ),
+                      const SizedBox(height: 3),
                       Row(
                         children: [
                           if (r.low) ...[
-                            _pill('Low', empWarn, empWarnTint),
+                            EmpStatusPill.warning('Low stock'),
                             const SizedBox(width: 6),
                           ],
                           if (r.expiring) ...[
-                            _pill('Expiring', empDanger, empDangerTint),
+                            EmpStatusPill.danger('Expiring'),
                             const SizedBox(width: 6),
                           ],
-                          Text('${empQty(r.qty)} ${r.unit} · ${empMk(r.retail)}',
-                              style: empSans(12, color: empMuted)),
+                          Text(
+                            'Retail: ${empMk(r.retail)}',
+                            style: empSans(12, color: empMuted),
+                          ),
                         ],
                       ),
                     ],
                   ),
+                ),
+                const SizedBox(width: 12),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Text(
+                      '${empQty(r.qty)} ${r.unit}',
+                      style: empMono(
+                        14,
+                        weight: FontWeight.w700,
+                        color: r.low ? empWarn : empInk,
+                      ),
+                    ),
+                    const SizedBox(height: 1),
+                    Text(
+                      'on hand',
+                      style: empSans(10.5, color: empMuted),
+                    ),
+                  ],
                 ),
               ],
             ),
           );
         }),
       ),
-    );
-  }
-
-  Widget _pill(String label, Color fg, Color bg) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-      decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(4)),
-      child: Text(label, style: empSans(10.5, weight: FontWeight.w700, color: fg)),
     );
   }
 
@@ -471,7 +504,7 @@ class _ReasonSheetState extends State<_ReasonSheet> {
   Widget build(BuildContext context) {
     return EmpSheetFrame(
       title: 'Request stock access',
-      subtitle: 'Tell the admin why you need it.',
+      subtitle: 'Specify why delivery access is needed.',
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -480,7 +513,7 @@ class _ReasonSheetState extends State<_ReasonSheet> {
             minLines: 2,
             maxLines: 3,
             style: empSans(14, color: empInk),
-            decoration: empField('Reason', hint: 'e.g. MSD delivery arrived'),
+            decoration: empField('Reason', hint: 'e.g. Supplier delivery arrived at branch'),
           ),
           const SizedBox(height: 16),
           FilledButton(
@@ -621,7 +654,7 @@ class _ReceiveSheetState extends State<_ReceiveSheet> {
   Widget build(BuildContext context) {
     return EmpSheetFrame(
       title: 'Receive stock',
-      subtitle: 'Delivered items go straight onto the sales list.',
+      subtitle: 'Delivered items are recorded straight into branch inventory.',
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -659,20 +692,15 @@ class _ReceiveSheetState extends State<_ReceiveSheet> {
           ],
           OutlinedButton.icon(
             onPressed: () => setState(() => _lines.add(_ReceiveLineForm())),
-            style: OutlinedButton.styleFrom(
-              foregroundColor: empPrimary,
-              minimumSize: const Size(0, 44),
-              side: const BorderSide(color: empBorder),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
-            ),
-            icon: const Icon(Icons.add, size: 18),
+            style: empOutlineButton(height: 40),
+            icon: const Icon(Icons.add, size: 16),
             label: const Text('Add another item'),
           ),
           if (_formError != null) ...[
             const SizedBox(height: 10),
             Text(_formError!, style: empSans(12.5, weight: FontWeight.w600, color: empDanger)),
           ],
-          const SizedBox(height: 14),
+          const SizedBox(height: 16),
           FilledButton(
             onPressed: _saving ? null : _submit,
             style: empPrimaryButton(),
@@ -690,7 +718,7 @@ class _ReceiveSheetState extends State<_ReceiveSheet> {
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: empBg,
+        color: Colors.white,
         border: Border.all(color: empBorder),
         borderRadius: BorderRadius.circular(4),
       ),
@@ -705,12 +733,16 @@ class _ReceiveSheetState extends State<_ReceiveSheet> {
               ),
               TextButton(
                 onPressed: () => _pickItem(l),
+                style: TextButton.styleFrom(
+                  foregroundColor: empPrimary,
+                  minimumSize: const Size(0, 32),
+                ),
                 child: Text(l.item == null ? 'Pick item' : 'Change',
-                    style: empSans(13, weight: FontWeight.w700, color: empPrimary)),
+                    style: empSans(12.5, weight: FontWeight.w600, color: empPrimary)),
               ),
               if (_lines.length > 1)
                 IconButton(
-                  icon: const Icon(Icons.delete_outline, size: 19, color: empDanger),
+                  icon: const Icon(Icons.close, size: 17, color: empMuted),
                   onPressed: () => setState(() {
                     l.dispose();
                     _lines.removeAt(i);
@@ -765,7 +797,7 @@ class _ReceiveSheetState extends State<_ReceiveSheet> {
                   controller: l.wholeCtrl,
                   keyboardType: const TextInputType.numberWithOptions(decimal: true),
                   style: empSans(14, color: empInk),
-                  decoration: empField('Wholesale?'),
+                  decoration: empField('Wholesale'),
                 ),
               ),
             ],
@@ -773,25 +805,21 @@ class _ReceiveSheetState extends State<_ReceiveSheet> {
           const SizedBox(height: 8),
           OutlinedButton.icon(
             onPressed: () async {
-              final now = DateTime.now();
-              final d = await showDatePicker(
+              final today = DateTime.now();
+              final picked = await showDatePicker(
                 context: context,
-                initialDate: l.expiry ?? now,
-                firstDate: DateTime(now.year, now.month, now.day),
-                lastDate: DateTime(now.year + 10),
+                initialDate: today.add(const Duration(days: 365)),
+                firstDate: today,
+                lastDate: DateTime(today.year + 10),
               );
-              if (d != null && mounted) setState(() => l.expiry = d);
+              if (picked != null) setState(() => l.expiry = picked);
             },
-            style: OutlinedButton.styleFrom(
-              foregroundColor: empInk,
-              minimumSize: const Size(0, 44),
-              side: const BorderSide(color: empBorder),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+            style: empOutlineButton(height: 38),
+            icon: const Icon(Icons.event_outlined, size: 15, color: empMuted),
+            label: Text(
+              l.expiry == null ? 'Set expiry date' : 'Expires: ${l.expiry!.day}/${l.expiry!.month}/${l.expiry!.year}',
+              style: empSans(12.5, color: empInk),
             ),
-            icon: const Icon(Icons.calendar_month_outlined, size: 18),
-            label: Text(l.expiry == null
-                ? 'Expiry (optional)'
-                : '${l.expiry!.day}/${l.expiry!.month}/${l.expiry!.year} — tap to change'),
           ),
         ],
       ),
@@ -808,64 +836,85 @@ class _ItemPickerSheet extends StatefulWidget {
 }
 
 class _ItemPickerSheetState extends State<_ItemPickerSheet> {
-  final _ctrl = TextEditingController();
+  final _searchCtrl = TextEditingController();
   List<CatalogOption> _results = [];
-  bool _searching = false;
+  bool _loading = false;
 
   @override
   void dispose() {
-    _ctrl.dispose();
+    _searchCtrl.dispose();
     super.dispose();
   }
 
   Future<void> _search(String q) async {
-    setState(() => _searching = true);
+    if (q.trim().length < 2) {
+      setState(() => _results = []);
+      return;
+    }
+    setState(() => _loading = true);
     try {
       final res = await widget.repo.searchCatalog(q);
-      if (!mounted || _ctrl.text != q) return;
+      if (!mounted) return;
+      if (_searchCtrl.text != q) return;
       setState(() {
         _results = res;
-        _searching = false;
+        _loading = false;
       });
     } catch (_) {
-      if (mounted) setState(() => _searching = false);
+      if (mounted) setState(() => _loading = false);
     }
   }
 
   @override
   Widget build(BuildContext context) {
     return EmpSheetFrame(
-      title: 'Pick item',
-      subtitle: 'Only products from the catalog.',
+      title: 'Pick catalog item',
+      subtitle: 'Type item name to search catalog.',
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           TextField(
-            controller: _ctrl,
+            controller: _searchCtrl,
             onChanged: _search,
-            autofocus: true,
             style: empSans(14, color: empInk),
             decoration: empField('Type a drug name…').copyWith(
-              prefixIcon: const Icon(Icons.search, size: 20, color: empMuted),
+              prefixIcon: const Icon(Icons.search, size: 18, color: empMuted),
             ),
           ),
-          const SizedBox(height: 8),
-          if (_searching)
+          const SizedBox(height: 10),
+          if (_loading)
             const Padding(
-              padding: EdgeInsets.symmetric(vertical: 12),
+              padding: EdgeInsets.symmetric(vertical: 20),
               child: Center(
                 child: SizedBox(
-                    width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: empPrimary)),
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(strokeWidth: 2, color: empPrimary),
+                ),
               ),
             )
-          else
+          else if (_results.isNotEmpty)
             for (final c in _results)
-              ListTile(
-                contentPadding: EdgeInsets.zero,
-                title: Text(c.name, style: empSans(14, weight: FontWeight.w600, color: empInk)),
-                trailing: const Icon(Icons.chevron_right, color: empMuted),
+              InkWell(
                 onTap: () => Navigator.of(context).pop(c),
-              ),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(c.name, style: empSans(13.5, weight: FontWeight.w600, color: empInk)),
+                      ),
+                      const Icon(Icons.chevron_right, size: 17, color: empMuted),
+                    ],
+                  ),
+                ),
+              )
+          else if (_searchCtrl.text.trim().length >= 2)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 16),
+              child: Text('No items match “${_searchCtrl.text.trim()}”.',
+                  textAlign: TextAlign.center, style: empSans(12.5, color: empMuted)),
+            ),
         ],
       ),
     );

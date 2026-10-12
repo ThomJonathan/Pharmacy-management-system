@@ -549,7 +549,11 @@ class _SaleScreenState extends State<SaleScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              _checkoutCard(true, onChanged: () => setSheet(() {})),
+              _checkoutCard(
+                true,
+                inSheet: true,
+                onChanged: () => setSheet(() {}),
+              ),
               const SizedBox(height: 10),
               SizedBox(
                 height: 54,
@@ -594,18 +598,24 @@ class _SaleScreenState extends State<SaleScreen> {
 
   Widget _body(bool wide) {
     if (_isStock) {
-      return const EmpCard(
+      return Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          border: Border.all(color: empBorder),
+          borderRadius: BorderRadius.circular(4),
+        ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
               'Sales are handled at the counter',
-              style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
+              style: empSans(15, weight: FontWeight.w700, color: empInk),
             ),
-            SizedBox(height: 6),
+            const SizedBox(height: 4),
             Text(
               'Your role records stock, not sales. Head to the Stock tab to receive deliveries.',
-              style: TextStyle(fontSize: 13),
+              style: empSans(13, color: empMuted),
             ),
           ],
         ),
@@ -697,32 +707,30 @@ class _SaleScreenState extends State<SaleScreen> {
   }
 
   Widget _adminBranchCard() {
-    return EmpCard(
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12),
-        decoration: BoxDecoration(
-          border: Border.all(color: empBorder),
-          borderRadius: BorderRadius.circular(4),
-          color: Colors.white,
-        ),
-        child: DropdownButtonHideUnderline(
-          child: DropdownButton<String>(
-            value: _adminBranchId,
-            isExpanded: true,
-            hint: Text(
-              'Choose a branch to sell from',
-              style: empSans(13.5, color: empMuted),
-            ),
-            style: empSans(14, color: empInk),
-            items: [
-              for (final b in _branches)
-                DropdownMenuItem(value: b.id, child: Text(b.name)),
-            ],
-            onChanged: (v) {
-              setState(() => _adminBranchId = v);
-              _refreshAll();
-            },
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      decoration: BoxDecoration(
+        border: Border.all(color: empBorder),
+        borderRadius: BorderRadius.circular(4),
+        color: Colors.white,
+      ),
+      child: DropdownButtonHideUnderline(
+        child: DropdownButton<String>(
+          value: _adminBranchId,
+          isExpanded: true,
+          hint: Text(
+            'Choose a branch to sell from',
+            style: empSans(13.5, color: empMuted),
           ),
+          style: empSans(14, color: empInk),
+          items: [
+            for (final b in _branches)
+              DropdownMenuItem(value: b.id, child: Text(b.name)),
+          ],
+          onChanged: (v) {
+            setState(() => _adminBranchId = v);
+            _refreshAll();
+          },
         ),
       ),
     );
@@ -831,45 +839,27 @@ class _SaleScreenState extends State<SaleScreen> {
       scrollDirection: Axis.horizontal,
       child: Row(
         children: [
-          _chip('All', _category == null, () {
-            setState(() => _category = null);
-            _searchItems(silent: true);
-          }),
+          EmpFilterPill(
+            label: 'All',
+            selected: _category == null,
+            onTap: () {
+              setState(() => _category = null);
+              _searchItems(silent: true);
+            },
+          ),
           const SizedBox(width: 8),
           for (final c in _categories) ...[
-            _chip(c, _category == c, () {
-              setState(() => _category = _category == c ? null : c);
-              _searchItems(silent: true);
-            }),
+            EmpFilterPill(
+              label: c,
+              selected: _category == c,
+              onTap: () {
+                setState(() => _category = _category == c ? null : c);
+                _searchItems(silent: true);
+              },
+            ),
             const SizedBox(width: 8),
           ],
         ],
-      ),
-    );
-  }
-
-  Widget _chip(String label, bool active, VoidCallback onTap) {
-    return Material(
-      color: active ? empPrimary : empSurface,
-      borderRadius: BorderRadius.circular(4),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(4),
-        onTap: onTap,
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(4),
-            border: Border.all(color: active ? empPrimary : empBorder),
-          ),
-          child: Text(
-            label,
-            style: empSans(
-              13,
-              weight: FontWeight.w600,
-              color: active ? Colors.white : empMuted,
-            ),
-          ),
-        ),
       ),
     );
   }
@@ -878,7 +868,8 @@ class _SaleScreenState extends State<SaleScreen> {
     if (_branchId == null) {
       return const EmpEmpty(
         icon: Icons.storefront_outlined,
-        message: 'Choose a branch above to start selling.',
+        title: 'Choose a branch',
+        message: 'Select a branch above to start selling.',
       );
     }
     if (_itemsLoading) {
@@ -890,140 +881,152 @@ class _SaleScreenState extends State<SaleScreen> {
     if (_items.isEmpty) {
       return EmpEmpty(
         icon: Icons.search_off_outlined,
+        title: 'No items found',
         message: _search.trim().isEmpty
             ? 'No items with stock at this branch yet.'
             : 'No items found for “${_search.trim()}”.',
       );
     }
-    return Column(
-      children: [
-        for (final item in _items) ...[
-          _ItemRow(
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        border: Border.all(color: empBorder),
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Column(
+        children: List.generate(_items.length, (i) {
+          final item = _items[i];
+          final isLast = i == _items.length - 1;
+          return _ItemRow(
             item: item,
             price: _priceOf(item),
             saleType: _saleType,
+            isLast: isLast,
             onAdd: () => _add(item),
-          ),
-          const SizedBox(height: 8),
-        ],
-      ],
+          );
+        }),
+      ),
     );
   }
 
   /// Right panel (desktop) / cart sheet content (mobile).
-  Widget _checkoutCard(bool selling, {VoidCallback? onChanged}) {
-    return EmpCard(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  'Cart ($_count ${_count == 1 ? 'item' : 'items'})',
-                  style: empSans(15, weight: FontWeight.w700, color: empInk),
-                ),
-              ),
-              if (_cart.isNotEmpty)
-                TextButton.icon(
-                  onPressed: _processing
-                      ? null
-                      : () => _clearCart(onChanged: onChanged),
-                  icon: const Icon(Icons.delete_outline, size: 17),
-                  label: const Text('Clear'),
-                  style: TextButton.styleFrom(foregroundColor: empDanger),
-                ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          if (_cart.isEmpty)
-            Text(
-              'Tap + on an item to add it.',
-              style: empSans(13, color: empMuted),
-            )
-          else
-            for (final l in _cart.values)
-              _CartLineRow(
-                key: ValueKey(l.item.itemId),
-                line: l,
-                price: _priceOf(l.item),
-                onBump: (id, delta) {
-                  _bump(id, delta);
-                  onChanged?.call();
-                },
-                onSet: (id, qty) {
-                  _setQty(id, qty);
-                  onChanged?.call();
-                },
-              ),
-          const Divider(height: 20, color: empBorder),
-          Text(
-            'Sale type',
-            style: empSans(12.5, weight: FontWeight.w600, color: empMuted),
-          ),
-          const SizedBox(height: 6),
-          Row(
-            children: [
-              Expanded(
-                child: _typeTab(
-                  'Retail',
-                  _saleType == 'retail',
-                  () => setState(() => _saleType = 'retail'),
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: _typeTab(
-                  'Wholesale',
-                  _saleType == 'wholesale',
-                  () => setState(() => _saleType = 'wholesale'),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 14),
-          _CustomerBlock(
-            customer: _customer,
-            required: _method == 'credit',
-            onPick: _pickCustomer,
-            onClear: () => setState(() => _customer = null),
-          ),
-          const SizedBox(height: 14),
-          _PaymentBlock(
-            method: _method,
-            onMethod: (m) => setState(() => _method = m),
-            cashCtrl: _cashCtrl,
-            total: _total,
-            partCtrl: _partCtrl,
-            partMethod: _partMethod,
-            onPartMethod: (m) => setState(() => _partMethod = m),
-          ),
-          const SizedBox(height: 6),
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  'Total',
-                  style: empSans(15, weight: FontWeight.w700, color: empInk),
-                ),
-              ),
-              Text(
-                empMk(_total),
-                style: empMono(19, weight: FontWeight.w700, color: empPrimary),
-              ),
-            ],
-          ),
-          if (!selling)
-            Padding(
-              padding: const EdgeInsets.only(top: 6),
+  Widget _checkoutCard(
+    bool selling, {
+    bool inSheet = false,
+    VoidCallback? onChanged,
+  }) {
+    final content = Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            Expanded(
               child: Text(
-                'Choose a branch to enable checkout.',
-                style: empSans(12, color: empMuted),
+                'Cart ($_count ${_count == 1 ? 'item' : 'items'})',
+                style: empSans(15, weight: FontWeight.w700, color: empInk),
               ),
             ),
-        ],
-      ),
+            if (_cart.isNotEmpty)
+              TextButton.icon(
+                onPressed: _processing
+                    ? null
+                    : () => _clearCart(onChanged: onChanged),
+                icon: const Icon(Icons.delete_outline, size: 17),
+                label: const Text('Clear'),
+                style: TextButton.styleFrom(foregroundColor: empDanger),
+              ),
+          ],
+        ),
+        const SizedBox(height: 10),
+        if (_cart.isEmpty)
+          Text(
+            'Tap + on an item to add it.',
+            style: empSans(13, color: empMuted),
+          )
+        else
+          for (final l in _cart.values)
+            _CartLineRow(
+              key: ValueKey(l.item.itemId),
+              line: l,
+              price: _priceOf(l.item),
+              onBump: (id, delta) {
+                _bump(id, delta);
+                onChanged?.call();
+              },
+              onSet: (id, qty) {
+                _setQty(id, qty);
+                onChanged?.call();
+              },
+            ),
+        const Divider(height: 20, color: empBorder),
+        Text(
+          'Sale type',
+          style: empSans(12.5, weight: FontWeight.w600, color: empMuted),
+        ),
+        const SizedBox(height: 6),
+        Row(
+          children: [
+            Expanded(
+              child: _typeTab(
+                'Retail',
+                _saleType == 'retail',
+                () => setState(() => _saleType = 'retail'),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: _typeTab(
+                'Wholesale',
+                _saleType == 'wholesale',
+                () => setState(() => _saleType = 'wholesale'),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 14),
+        _CustomerBlock(
+          customer: _customer,
+          required: _method == 'credit',
+          onPick: _pickCustomer,
+          onClear: () => setState(() => _customer = null),
+        ),
+        const SizedBox(height: 14),
+        _PaymentBlock(
+          method: _method,
+          onMethod: (m) => setState(() => _method = m),
+          cashCtrl: _cashCtrl,
+          total: _total,
+          partCtrl: _partCtrl,
+          partMethod: _partMethod,
+          onPartMethod: (m) => setState(() => _partMethod = m),
+        ),
+        const SizedBox(height: 6),
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                'Total',
+                style: empSans(15, weight: FontWeight.w700, color: empInk),
+              ),
+            ),
+            Text(
+              empMk(_total),
+              style: empMono(19, weight: FontWeight.w700, color: empPrimary),
+            ),
+          ],
+        ),
+        if (!selling)
+          Padding(
+            padding: const EdgeInsets.only(top: 6),
+            child: Text(
+              'Choose a branch to enable checkout.',
+              style: empSans(12, color: empMuted),
+            ),
+          ),
+      ],
     );
+    if (inSheet) return content;
+    return EmpCard(child: content);
   }
 
   Widget _typeTab(String label, bool active, VoidCallback onTap) {
@@ -1039,7 +1042,7 @@ class _SaleScreenState extends State<SaleScreen> {
             borderRadius: BorderRadius.circular(4),
             border: Border.all(
               color: active ? empPrimary : empBorder,
-              width: active ? 1.5 : 1,
+              width: 1,
             ),
           ),
           child: Center(
@@ -1059,16 +1062,16 @@ class _SaleScreenState extends State<SaleScreen> {
 
   Widget _completeButton(bool selling) {
     return SizedBox(
-      height: 56,
+      height: 44,
       child: FilledButton(
         onPressed: (!selling || _processing || _cart.isEmpty)
             ? null
             : _complete,
-        style: empPrimaryButton(height: 56),
+        style: empPrimaryButton(height: 44),
         child: _processing
             ? const SizedBox(
-                width: 22,
-                height: 22,
+                width: 20,
+                height: 20,
                 child: CircularProgressIndicator(
                   strokeWidth: 2,
                   color: Colors.white,
@@ -1088,11 +1091,13 @@ class _ItemRow extends StatelessWidget {
   final SaleItem item;
   final double price;
   final String saleType;
+  final bool isLast;
   final VoidCallback onAdd;
   const _ItemRow({
     required this.item,
     required this.price,
     required this.saleType,
+    required this.isLast,
     required this.onAdd,
   });
 
@@ -1100,9 +1105,12 @@ class _ItemRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final enabled = item.inStock;
     return Opacity(
-      opacity: enabled ? 1 : 0.55,
-      child: EmpCard(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+      opacity: enabled ? 1 : 0.5,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        decoration: BoxDecoration(
+          border: isLast ? null : const Border(bottom: BorderSide(color: empBorder)),
+        ),
         child: Row(
           children: [
             Expanded(
@@ -1112,7 +1120,7 @@ class _ItemRow extends StatelessWidget {
                   Text(
                     item.name,
                     style: empSans(
-                      14,
+                      13.5,
                       weight: FontWeight.w600,
                       color: enabled ? empInk : empMuted,
                     ),
@@ -1120,17 +1128,17 @@ class _ItemRow extends StatelessWidget {
                   const SizedBox(height: 2),
                   Text(
                     enabled
-                        ? '${empMk(price)}${saleType == 'wholesale' ? ' wholesale' : ''} · ${empQty(item.available)} ${item.unit} left'
+                        ? '${empMk(price)}${saleType == 'wholesale' ? ' wholesale' : ''} · ${empQty(item.available)} ${item.unit} available'
                         : 'Out of stock',
-                    style: empSans(12.5, color: enabled ? empMuted : empDanger),
+                    style: empSans(12, color: enabled ? empMuted : empDanger),
                   ),
                 ],
               ),
             ),
             const SizedBox(width: 8),
             SizedBox(
-              width: 48,
-              height: 48,
+              width: 34,
+              height: 34,
               child: FilledButton(
                 onPressed: enabled ? onAdd : null,
                 style: FilledButton.styleFrom(
@@ -1142,7 +1150,7 @@ class _ItemRow extends StatelessWidget {
                   ),
                   padding: EdgeInsets.zero,
                 ),
-                child: const Icon(Icons.add, size: 24),
+                child: const Icon(Icons.add, size: 20),
               ),
             ),
           ],
@@ -1615,26 +1623,11 @@ class _PaymentBlock extends StatelessWidget {
           runSpacing: 8,
           children: [
             for (final (v, label, icon) in methods)
-              ChoiceChip(
-                label: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(icon, size: 15),
-                    const SizedBox(width: 5),
-                    Text(label),
-                  ],
-                ),
+              EmpFilterPill(
+                label: label,
+                icon: icon,
                 selected: method == v,
-                onSelected: (_) => onMethod(v),
-                selectedColor: empPrimary,
-                backgroundColor: empSurface,
-                side: BorderSide(color: method == v ? empPrimary : empBorder),
-                labelStyle: empSans(
-                  13,
-                  weight: FontWeight.w600,
-                  color: method == v ? Colors.white : empMuted,
-                ),
-                showCheckmark: false,
+                onTap: () => onMethod(v),
               ),
           ],
         ),
@@ -1677,21 +1670,10 @@ class _PaymentBlock extends StatelessWidget {
                 ('tnm_mpamba', 'TNM Mpamba'),
                 ('card', 'Card'),
               ])
-                ChoiceChip(
-                  label: Text(label),
+                EmpFilterPill(
+                  label: label,
                   selected: partMethod == v,
-                  onSelected: (_) => onPartMethod(v),
-                  selectedColor: empPrimaryTint,
-                  backgroundColor: empSurface,
-                  side: BorderSide(
-                    color: partMethod == v ? empPrimary : empBorder,
-                  ),
-                  labelStyle: empSans(
-                    12.5,
-                    weight: FontWeight.w600,
-                    color: partMethod == v ? empPrimary : empMuted,
-                  ),
-                  showCheckmark: false,
+                  onTap: () => onPartMethod(v),
                 ),
             ],
           ),
@@ -1726,13 +1708,17 @@ class _HistoryBlock extends StatelessWidget {
       );
     }
     if (sales.isEmpty) {
-      return EmpEmpty(
+      return const EmpEmpty(
         icon: Icons.receipt_long_outlined,
         message: 'No sales recorded at this branch today yet.',
       );
     }
-    return EmpCard(
-      padding: EdgeInsets.zero,
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        border: Border.all(color: empBorder),
+        borderRadius: BorderRadius.circular(4),
+      ),
       child: Column(
         children: List.generate(sales.length, (i) {
           final s = sales[i];
@@ -2203,20 +2189,10 @@ class _ReceiptSheetState extends State<_ReceiptSheet> {
   }
 
   Widget _formatChip(String label, String value) {
-    final active = _format == value;
-    return ChoiceChip(
-      label: Text(label),
-      selected: active,
-      onSelected: (_) => setState(() => _format = value),
-      selectedColor: empPrimary,
-      backgroundColor: empSurface,
-      side: BorderSide(color: active ? empPrimary : empBorder),
-      labelStyle: empSans(
-        12.5,
-        weight: FontWeight.w600,
-        color: active ? Colors.white : empMuted,
-      ),
-      showCheckmark: false,
+    return EmpFilterPill(
+      label: label,
+      selected: _format == value,
+      onTap: () => setState(() => _format = value),
     );
   }
 }

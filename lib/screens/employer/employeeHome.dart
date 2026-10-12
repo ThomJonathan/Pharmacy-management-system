@@ -9,17 +9,8 @@ import 'expenseScreen.dart';
 // ============================================================================
 // EMPLOYEE HOME — first screen for branch staff (cashier-first).
 //   Read-only apart from its shortcuts and expense recording. Everything
-//   is live and limited to the user's own branch. Cashiers never see
-//   profit, buying prices, other branches or suppliers — those are simply
-//   not queried. Branch expenses can be recorded here and viewed under
-//   the desktop Expenses tab.
-//
-//   Role variations: stock_controller gets Receive stock +
-//   recent movements; manager gets the cashier layout + profit/expenses.
-//
-//   Lives inside EmployeeShell's IndexedStack, so the bottom nav (mobile)
-//   and side rail (desktop) stay visible — details open in sheets/dialogs.
-//   Numbers reload whenever Home is re-selected, plus pull-to-refresh.
+//   is live and limited to the user's own branch. Clean, minimal design
+//   hierarchy using typography, alignment, and hairline dividers.
 // ============================================================================
 
 class EmployeeHomeScreen extends StatefulWidget {
@@ -45,18 +36,8 @@ String _greeting() {
 String _todayLabel() {
   const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
   const months = [
-    'Jan',
-    'Feb',
-    'Mar',
-    'Apr',
-    'May',
-    'Jun',
-    'Jul',
-    'Aug',
-    'Sep',
-    'Oct',
-    'Nov',
-    'Dec',
+    'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
   ];
   final n = DateTime.now();
   return '${days[n.weekday - 1]} ${n.day} ${months[n.month - 1]} ${n.year}';
@@ -150,7 +131,6 @@ class _EmployeeHomeScreenState extends State<EmployeeHomeScreen> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    // Reload whenever the user returns to Home (IndexedStack keeps us alive).
     final selected = EmployeeShellScope.of(context)?.selectedIndex == 0;
     if (selected && !_wasSelected && _loadedOnce) _load(silent: true);
     _wasSelected = selected;
@@ -161,7 +141,7 @@ class _EmployeeHomeScreenState extends State<EmployeeHomeScreen> {
     if (branchId == null) {
       setState(() {
         _loading = false;
-        _error = 'No branch assigned to this account yet. Ask your admin to assign one.';
+        _error = 'No branch assigned to this account yet.';
       });
       return;
     }
@@ -204,7 +184,6 @@ class _EmployeeHomeScreenState extends State<EmployeeHomeScreen> {
     try {
       final res = await _repo.lookup(branchId: branchId, query: q);
       if (!mounted) return;
-      // Drop stale responses.
       if (_lookupCtrl.text != q) return;
       setState(() {
         _lookupResults = res;
@@ -237,7 +216,7 @@ class _EmployeeHomeScreenState extends State<EmployeeHomeScreen> {
             if (snap.hasError || !snap.hasData) {
               return Text(
                 'Couldn’t load the receipt.',
-                style: empSans(13.5, color: empDanger),
+                style: empSans(13, color: empDanger),
               );
             }
             final r = snap.data!;
@@ -279,7 +258,7 @@ class _EmployeeHomeScreenState extends State<EmployeeHomeScreen> {
                       ],
                     ),
                   ),
-                const Divider(color: empBorder),
+                const Divider(height: 16, color: empBorder),
                 Row(
                   children: [
                     Expanded(
@@ -304,7 +283,7 @@ class _EmployeeHomeScreenState extends State<EmployeeHomeScreen> {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  'Paid ${empMk(r.paid)}${r.cashier.isNotEmpty ? ' · ${r.cashier}' : ''}',
+                  'Paid ${empMk(r.paid)}${r.cashier.isNotEmpty ? ' · cashier: ${r.cashier}' : ''}',
                   style: empSans(12, color: empMuted),
                 ),
               ],
@@ -341,19 +320,18 @@ class _EmployeeHomeScreenState extends State<EmployeeHomeScreen> {
           child: LayoutBuilder(
             builder: (context, c) {
               final wide = c.maxWidth >= empWideBreakpoint;
-              final tablet = !wide && c.maxWidth >= empTabletBreakpoint;
               return SingleChildScrollView(
                 physics: const AlwaysScrollableScrollPhysics(),
                 padding: EdgeInsets.fromLTRB(
                   wide ? 32 : 18,
                   wide ? 28 : 14,
                   wide ? 32 : 18,
-                  24,
+                  32,
                 ),
                 child: Center(
                   child: ConstrainedBox(
                     constraints: const BoxConstraints(maxWidth: 1080),
-                    child: _body(wide, tablet),
+                    child: _body(wide),
                   ),
                 ),
               );
@@ -364,37 +342,22 @@ class _EmployeeHomeScreenState extends State<EmployeeHomeScreen> {
     );
   }
 
-  Widget _body(bool wide, bool tablet) {
+  Widget _body(bool wide) {
     if (_loading) {
       return const Padding(
-        padding: EdgeInsets.only(top: 90),
+        padding: EdgeInsets.only(top: 80),
         child: Center(child: CircularProgressIndicator(color: empPrimary)),
       );
     }
     if (_error != null || _data == null) {
-      return Padding(
-        padding: const EdgeInsets.only(top: 60),
-        child: EmpCard(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Couldn’t load Home',
-                style: empSans(15, weight: FontWeight.w700, color: empInk),
-              ),
-              const SizedBox(height: 6),
-              Text(
-                _error ?? 'Something went wrong.',
-                style: empSans(13, color: empMuted),
-              ),
-              const SizedBox(height: 14),
-              FilledButton(
-                onPressed: _load,
-                style: empPrimaryButton(height: 44),
-                child: const Text('Retry'),
-              ),
-            ],
-          ),
+      return EmpEmpty(
+        icon: Icons.error_outline,
+        title: 'Couldn’t load Home',
+        message: _error ?? 'Something went wrong.',
+        action: OutlinedButton(
+          onPressed: _load,
+          style: empOutlineButton(height: 36),
+          child: const Text('Retry'),
         ),
       );
     }
@@ -412,7 +375,7 @@ class _EmployeeHomeScreenState extends State<EmployeeHomeScreen> {
     );
     final summary = _SummaryBlock(
       data: d,
-      tablet: tablet,
+      wide: wide,
       showManagerExtras: _isManager,
     );
     final lookup = _LookupBlock(
@@ -432,71 +395,65 @@ class _EmployeeHomeScreenState extends State<EmployeeHomeScreen> {
     );
 
     if (wide) {
-      // Desktop: greeting across the top; two columns below.
       return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          greeting,
-          const SizedBox(height: 18),
-          IntrinsicHeight(
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Expanded(
-                  flex: 3,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      action,
-                      const SizedBox(height: 14),
-                      summary,
-                      const SizedBox(height: 14),
-                      recent,
-                    ],
-                  ),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Expanded(child: greeting),
+              action,
+            ],
+          ),
+          const SizedBox(height: 20),
+          summary,
+          const SizedBox(height: 24),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                flex: 3,
+                child: recent,
+              ),
+              const SizedBox(width: 24),
+              Expanded(
+                flex: 2,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    lookup,
+                    const SizedBox(height: 24),
+                    owing,
+                  ],
                 ),
-                const SizedBox(width: 16),
-                Expanded(
-                  flex: 2,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      lookup,
-                      const SizedBox(height: 14),
-                      owing,
-                    ],
-                  ),
-                ),
-              ],
-            ),
+              ),
+            ],
           ),
         ],
       );
     }
 
-    // Mobile + tablet: one column in thumb-friendly order.
-    final blocks = <Widget>[
-      greeting,
-      const SizedBox(height: 16),
-      action,
-      const SizedBox(height: 14),
-      summary,
-      const SizedBox(height: 14),
-      lookup,
-      const SizedBox(height: 14),
-      recent,
-      const SizedBox(height: 14),
-      owing,
-    ];
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: blocks,
+      children: [
+        greeting,
+        const SizedBox(height: 14),
+        action,
+        const SizedBox(height: 18),
+        summary,
+        const SizedBox(height: 20),
+        lookup,
+        const SizedBox(height: 20),
+        recent,
+        const SizedBox(height: 20),
+        owing,
+      ],
     );
   }
 }
 
 // ============================================================================
-// GREETING + MAIN ACTION
+// GREETING + MAIN ACTIONS
 // ============================================================================
 
 class _Greeting extends StatelessWidget {
@@ -527,7 +484,7 @@ class _Greeting extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final first = userName.trim().isEmpty
-        ? 'there'
+        ? 'Staff'
         : userName.trim().split(' ').first;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -536,19 +493,11 @@ class _Greeting extends StatelessWidget {
           '${_greeting()}, $first',
           style: empSans(22, weight: FontWeight.w700, color: empInk),
         ),
-        const SizedBox(height: 4),
-        Row(
-          children: [
-            const Icon(Icons.storefront_outlined, size: 14, color: empMuted),
-            const SizedBox(width: 5),
-            Expanded(
-              child: Text(
-                '${branchName.isEmpty ? 'Your branch' : branchName} · $_roleLabel · ${_todayLabel()}',
-                style: empSans(12.5, color: empMuted),
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-          ],
+        const SizedBox(height: 3),
+        Text(
+          '${branchName.isEmpty ? 'Your branch' : branchName} · $_roleLabel · ${_todayLabel()}',
+          style: empSans(12.5, color: empMuted),
+          overflow: TextOverflow.ellipsis,
         ),
       ],
     );
@@ -580,209 +529,233 @@ class _MainAction extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      height: 54,
-      child: Row(
-        children: [
-          Expanded(
-            flex: 3,
-            child: FilledButton.icon(
-              onPressed: () =>
-                  EmployeeShell.switchTo(context, isStock ? 2 : 1),
-              style: empPrimaryButton(height: 54),
-              icon: Icon(
-                isStock ? Icons.add_box_outlined : Icons.point_of_sale_outlined,
-                size: 20,
-              ),
-              label: Text(isStock ? 'Receive stock' : 'New sale'),
-            ),
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        FilledButton.icon(
+          onPressed: () =>
+              EmployeeShell.switchTo(context, isStock ? 2 : 1),
+          style: empPrimaryButton(height: 40),
+          icon: Icon(
+            isStock ? Icons.add_box_outlined : Icons.point_of_sale_outlined,
+            size: 17,
           ),
-          const SizedBox(width: 10),
-          Expanded(
-            flex: 2,
-            child: OutlinedButton.icon(
-              onPressed: () => _newExpense(context),
-              style: OutlinedButton.styleFrom(
-                foregroundColor: empPrimary,
-                minimumSize: const Size(0, 54),
-                side: const BorderSide(color: empBorder),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(4),
-                ),
-              ),
-              icon: const Icon(Icons.add_card_outlined, size: 19),
-              label: const Text('New expense'),
-            ),
-          ),
-        ],
-      ),
+          label: Text(isStock ? 'Receive stock' : 'New sale'),
+        ),
+        const SizedBox(width: 8),
+        OutlinedButton.icon(
+          onPressed: () => _newExpense(context),
+          style: empOutlineButton(height: 40),
+          icon: const Icon(Icons.add_card_outlined, size: 16),
+          label: const Text('Record expense'),
+        ),
+      ],
     );
   }
 }
 
 // ============================================================================
-// SUMMARY (today's branch figures — no profit or buying prices for cashiers)
+// SUMMARY METRIC BAND (clean typography + dividers, no card containers)
 // ============================================================================
 
 class _SummaryBlock extends StatelessWidget {
   final EmployeeHomeBundle data;
-  final bool tablet;
+  final bool wide;
   final bool showManagerExtras;
   const _SummaryBlock({
     required this.data,
-    required this.tablet,
+    required this.wide,
     required this.showManagerExtras,
   });
 
   @override
   Widget build(BuildContext context) {
-    final count = _StatCard(
-      label: 'Sales today',
-      value: '${data.salesCount}',
-      sub: data.salesCount == 1 ? 'sale' : 'sales',
-      icon: Icons.receipt_long_outlined,
-    );
-    final total = _StatCard(
-      label: 'Total sales',
-      value: empMk(data.salesTotal),
-      sub: 'today',
-      icon: Icons.payments_outlined,
-      money: true,
-    );
-    final splitCard = EmpCard(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _splitRow('Cash', data.cashTotal),
-          _splitRow('Airtel Money', data.airtelTotal),
-          _splitRow('TNM Mpamba', data.mpambaTotal),
-          if (data.mobileTotal > 0)
-            _splitRow('Mobile money (old)', data.mobileTotal),
-          _splitRow('Credit', data.creditTotal),
-          if (data.cardTotal > 0) _splitRow('Card', data.cardTotal),
-        ],
-      ),
-    );
-
-    final main = tablet
-        ? Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(child: count),
-              const SizedBox(width: 10),
-              Expanded(child: total),
-              const SizedBox(width: 10),
-              Expanded(child: splitCard),
-            ],
-          )
-        : Column(
-            children: [
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Expanded(child: count),
-                  const SizedBox(width: 10),
-                  Expanded(child: total),
-                ],
-              ),
-              const SizedBox(height: 10),
-              splitCard,
-            ],
-          );
-
-    if (!showManagerExtras) return main;
-    return Column(
-      children: [
-        main,
-        const SizedBox(height: 10),
-        Row(
+    if (wide) {
+      return Container(
+        padding: const EdgeInsets.symmetric(vertical: 16),
+        decoration: const BoxDecoration(
+          border: Border(
+            top: BorderSide(color: empBorder),
+            bottom: BorderSide(color: empBorder),
+          ),
+        ),
+        child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Expanded(
-              child: _StatCard(
-                label: 'Gross profit today',
-                value: empMk(data.grossToday),
-                sub: 'branch',
-                icon: Icons.trending_up_outlined,
-                money: true,
+              flex: 2,
+              child: EmpStatMetric(
+                label: 'Sales today',
+                value: '${data.salesCount}',
+                sub: '${data.salesCount == 1 ? 'sale' : 'sales'} recorded',
               ),
             ),
-            const SizedBox(width: 10),
+            Container(width: 1, height: 48, color: empBorder),
+            const SizedBox(width: 20),
             Expanded(
-              child: _StatCard(
-                label: 'Expenses today',
-                value: empMk(data.expensesToday),
-                sub: 'branch',
-                icon: Icons.receipt_outlined,
-                money: true,
+              flex: 3,
+              child: EmpStatMetric(
+                label: 'Total sales today',
+                value: empMk(data.salesTotal),
+                sub: 'gross turnover',
+                valueColor: empPrimary,
+                mono: true,
               ),
             ),
+            Container(width: 1, height: 48, color: empBorder),
+            const SizedBox(width: 20),
+            Expanded(
+              flex: 4,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Payment split', style: empSans(12, color: empMuted)),
+                  const SizedBox(height: 4),
+                  Wrap(
+                    spacing: 14,
+                    runSpacing: 4,
+                    children: [
+                      _splitItem('Cash', data.cashTotal),
+                      _splitItem('Airtel', data.airtelTotal),
+                      _splitItem('Mpamba', data.mpambaTotal),
+                      _splitItem('Credit', data.creditTotal),
+                      if (data.cardTotal > 0) _splitItem('Card', data.cardTotal),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            if (showManagerExtras) ...[
+              Container(width: 1, height: 48, color: empBorder),
+              const SizedBox(width: 20),
+              Expanded(
+                flex: 3,
+                child: EmpStatMetric(
+                  label: 'Gross profit',
+                  value: empMk(data.grossToday),
+                  sub: 'revenue − cogs',
+                  valueColor: empSuccess,
+                  mono: true,
+                ),
+              ),
+              Container(width: 1, height: 48, color: empBorder),
+              const SizedBox(width: 20),
+              Expanded(
+                flex: 3,
+                child: EmpStatMetric(
+                  label: 'Expenses today',
+                  value: empMk(data.expensesToday),
+                  sub: 'branch outgoings',
+                  valueColor: empDanger,
+                  mono: true,
+                ),
+              ),
+            ],
           ],
         ),
-      ],
-    );
-  }
+      );
+    }
 
-  Widget _splitRow(String label, double amount) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 3),
-      child: Row(
-        children: [
-          Expanded(
-            child: Text(label, style: empSans(12.5, color: empMuted)),
-          ),
-          Text(
-            empMk(amount),
-            style: empMono(12.5, weight: FontWeight.w600, color: empInk),
-          ),
-        ],
+    // Mobile layout
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 14),
+      decoration: const BoxDecoration(
+        border: Border(
+          top: BorderSide(color: empBorder),
+          bottom: BorderSide(color: empBorder),
+        ),
       ),
-    );
-  }
-}
-
-class _StatCard extends StatelessWidget {
-  final String label;
-  final String value;
-  final String sub;
-  final IconData icon;
-  final bool money;
-  const _StatCard({
-    required this.label,
-    required this.value,
-    required this.sub,
-    required this.icon,
-    this.money = false,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return EmpCard(
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Icon(icon, size: 18, color: empPrimary),
-          const SizedBox(height: 8),
-          Text(
-            value,
-            style: money
-                ? empMono(17, weight: FontWeight.w700, color: empInk)
-                : empSans(22, weight: FontWeight.w700, color: empInk),
+          Row(
+            children: [
+              Expanded(
+                child: EmpStatMetric(
+                  label: 'Sales today',
+                  value: '${data.salesCount}',
+                  sub: '${data.salesCount == 1 ? 'sale' : 'sales'}',
+                ),
+              ),
+              Container(width: 1, height: 44, color: empBorder),
+              const SizedBox(width: 16),
+              Expanded(
+                child: EmpStatMetric(
+                  label: 'Total sales',
+                  value: empMk(data.salesTotal),
+                  sub: 'today’s turnover',
+                  valueColor: empPrimary,
+                  mono: true,
+                ),
+              ),
+            ],
           ),
-          const SizedBox(height: 2),
-          Text(
-            label,
-            style: empSans(12, weight: FontWeight.w600, color: empMuted),
+          const SizedBox(height: 12),
+          const Divider(height: 1, color: empBorder),
+          const SizedBox(height: 10),
+          Text('Payment breakdown', style: empSans(11.5, color: empMuted)),
+          const SizedBox(height: 4),
+          Wrap(
+            spacing: 16,
+            runSpacing: 4,
+            children: [
+              _splitItem('Cash', data.cashTotal),
+              _splitItem('Airtel', data.airtelTotal),
+              _splitItem('Mpamba', data.mpambaTotal),
+              _splitItem('Credit', data.creditTotal),
+              if (data.cardTotal > 0) _splitItem('Card', data.cardTotal),
+            ],
           ),
-          Text(sub, style: empSans(10.5, color: empMuted)),
+          if (showManagerExtras) ...[
+            const SizedBox(height: 12),
+            const Divider(height: 1, color: empBorder),
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                Expanded(
+                  child: EmpStatMetric(
+                    label: 'Gross profit',
+                    value: empMk(data.grossToday),
+                    sub: 'branch profit',
+                    valueColor: empSuccess,
+                    mono: true,
+                  ),
+                ),
+                Container(width: 1, height: 40, color: empBorder),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: EmpStatMetric(
+                    label: 'Expenses today',
+                    value: empMk(data.expensesToday),
+                    sub: 'branch spent',
+                    valueColor: empDanger,
+                    mono: true,
+                  ),
+                ),
+              ],
+            ),
+          ],
         ],
       ),
+    );
+  }
+
+  Widget _splitItem(String label, double amount) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text('$label: ', style: empSans(12, color: empMuted)),
+        Text(
+          empMk(amount),
+          style: empMono(12, weight: FontWeight.w600, color: empInk),
+        ),
+      ],
     );
   }
 }
 
 // ============================================================================
-// QUICK ITEM LOOKUP (prices + availability, no sale started)
+// QUICK ITEM LOOKUP
 // ============================================================================
 
 class _LookupBlock extends StatelessWidget {
@@ -805,119 +778,122 @@ class _LookupBlock extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final q = query.trim();
-    return EmpCard(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Quick lookup',
-            style: empSans(13.5, weight: FontWeight.w700, color: empInk),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const EmpSectionHeader(
+          title: 'Quick price lookup',
+          subtitle: 'Search prices & availability without starting a sale',
+        ),
+        const SizedBox(height: 10),
+        TextField(
+          controller: controller,
+          onChanged: onChanged,
+          style: empSans(14, color: empInk),
+          textInputAction: TextInputAction.search,
+          decoration: empField('Type a medicine or item name…').copyWith(
+            prefixIcon: const Icon(Icons.search, size: 18, color: empMuted),
+            suffixIcon: q.isEmpty
+                ? null
+                : IconButton(
+                    icon: const Icon(Icons.clear, size: 17, color: empMuted),
+                    onPressed: () {
+                      controller.clear();
+                      onChanged('');
+                    },
+                  ),
           ),
-          const SizedBox(height: 2),
-          Text(
-            'Prices and availability — no sale started.',
-            style: empSans(11.5, color: empMuted),
-          ),
-          const SizedBox(height: 10),
-          TextField(
-            controller: controller,
-            onChanged: onChanged,
-            style: empSans(14, color: empInk),
-            textInputAction: TextInputAction.search,
-            decoration: empField('Type a drug name…').copyWith(
-              prefixIcon: const Icon(Icons.search, size: 20, color: empMuted),
-              suffixIcon: q.isEmpty
-                  ? null
-                  : IconButton(
-                      icon: const Icon(Icons.clear, size: 18, color: empMuted),
-                      onPressed: () {
-                        controller.clear();
-                        onChanged('');
-                      },
-                    ),
-            ),
-          ),
-          if (loading) ...[
-            const SizedBox(height: 12),
-            const Center(
-              child: SizedBox(
-                width: 20,
-                height: 20,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2,
-                  color: empPrimary,
-                ),
+        ),
+        if (loading) ...[
+          const SizedBox(height: 12),
+          const Center(
+            child: SizedBox(
+              width: 18,
+              height: 18,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                color: empPrimary,
               ),
             ),
-          ] else if (q.length >= 2) ...[
-            const SizedBox(height: 8),
-            if (results.isEmpty)
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 8),
-                child: Text(
-                  'No items found for “$q”.',
-                  style: empSans(12.5, color: empMuted),
-                ),
-              )
-            else
-              for (final r in results)
-                Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 7),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              r.name,
-                              style: empSans(
-                                13.5,
-                                weight: FontWeight.w600,
-                                color: empInk,
+          ),
+        ] else if (q.length >= 2) ...[
+          const SizedBox(height: 8),
+          if (results.isEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              child: Text(
+                'No items found matching “$q”.',
+                style: empSans(12.5, color: empMuted),
+              ),
+            )
+          else
+            Container(
+              decoration: BoxDecoration(
+                color: Colors.white,
+                border: Border.all(color: empBorder),
+                borderRadius: BorderRadius.circular(4),
+              ),
+              child: Column(
+                children: List.generate(results.length, (i) {
+                  final r = results[i];
+                  final isLast = i == results.length - 1;
+                  return Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 10,
+                    ),
+                    decoration: BoxDecoration(
+                      border: isLast
+                          ? null
+                          : const Border(bottom: BorderSide(color: empBorder)),
+                    ),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                r.name,
+                                style: empSans(
+                                  13.5,
+                                  weight: FontWeight.w600,
+                                  color: empInk,
+                                ),
                               ),
-                            ),
-                            const SizedBox(height: 2),
-                            Text(
-                              'Retail ${_price(r.retailMin, r.retailMax)}'
-                              '${r.wholesaleMin != null ? ' · Wholesale ${_price(r.wholesaleMin!, r.wholesaleMax!)}' : ''}',
-                              style: empSans(12, color: empMuted),
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 9,
-                          vertical: 4,
-                        ),
-                        decoration: BoxDecoration(
-                          color: empPrimaryTint,
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                        child: Text(
-                          '${empQty(r.qty)} left',
-                          style: empSans(
-                            11.5,
-                            weight: FontWeight.w700,
-                            color: empPrimary,
+                              const SizedBox(height: 2),
+                              Text(
+                                'Retail: ${_price(r.retailMin, r.retailMax)}'
+                                '${r.wholesaleMin != null ? ' · Wholesale: ${_price(r.wholesaleMin!, r.wholesaleMax!)}' : ''}',
+                                style: empSans(12, color: empMuted),
+                              ),
+                            ],
                           ),
                         ),
-                      ),
-                    ],
-                  ),
-                ),
-          ],
+                        const SizedBox(width: 10),
+                        Text(
+                          '${empQty(r.qty)} left',
+                          style: empMono(
+                            12.5,
+                            weight: FontWeight.w700,
+                            color: r.qty <= 5 ? empWarn : empPrimary,
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                }),
+              ),
+            ),
         ],
-      ),
+      ],
     );
   }
 }
 
 // ============================================================================
-// RECENT SALES + RECEIPT
+// RECENT SALES TODAY
 // ============================================================================
 
 class _RecentSalesBlock extends StatelessWidget {
@@ -930,36 +906,38 @@ class _RecentSalesBlock extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          'Recent sales',
-          style: empSans(13.5, weight: FontWeight.w700, color: empInk),
+        EmpSectionHeader(
+          title: 'Recent sales today (${sales.length})',
         ),
-        const SizedBox(height: 8),
+        const SizedBox(height: 10),
         if (sales.isEmpty)
           const EmpEmpty(
             icon: Icons.point_of_sale_outlined,
-            message: 'No sales yet today. Tap New sale to start.',
+            title: 'No sales recorded yet',
+            message: 'Completed sales today will appear here.',
           )
         else
-          EmpCard(
-            padding: EdgeInsets.zero,
+          Container(
+            decoration: BoxDecoration(
+              color: Colors.white,
+              border: Border.all(color: empBorder),
+              borderRadius: BorderRadius.circular(4),
+            ),
             child: Column(
               children: List.generate(sales.length, (i) {
                 final s = sales[i];
+                final isLast = i == sales.length - 1;
                 return Material(
                   color: Colors.transparent,
                   child: InkWell(
-                    borderRadius: BorderRadius.circular(
-                      i == 0 || i == sales.length - 1 ? 4 : 0,
-                    ),
                     onTap: () => onTap(s),
                     child: Container(
                       padding: const EdgeInsets.symmetric(
                         horizontal: 16,
-                        vertical: 11,
+                        vertical: 12,
                       ),
                       decoration: BoxDecoration(
-                        border: i == sales.length - 1
+                        border: isLast
                             ? null
                             : const Border(
                                 bottom: BorderSide(color: empBorder),
@@ -974,12 +952,12 @@ class _RecentSalesBlock extends StatelessWidget {
                                 Text(
                                   s.receipt,
                                   style: empSans(
-                                    13,
+                                    13.5,
                                     weight: FontWeight.w600,
                                     color: empInk,
                                   ),
                                 ),
-                                const SizedBox(height: 2),
+                                const SizedBox(height: 1),
                                 Text(
                                   '${_timeLabel(s.time)} · ${s.itemCount} ${s.itemCount == 1 ? 'item' : 'items'} · ${_methodLabel(s.method)}',
                                   style: empSans(11.5, color: empMuted),
@@ -990,15 +968,15 @@ class _RecentSalesBlock extends StatelessWidget {
                           Text(
                             empMk(s.total),
                             style: empMono(
-                              13,
+                              13.5,
                               weight: FontWeight.w700,
                               color: empInk,
                             ),
                           ),
-                          const SizedBox(width: 4),
+                          const SizedBox(width: 8),
                           const Icon(
                             Icons.chevron_right,
-                            size: 17,
+                            size: 16,
                             color: empMuted,
                           ),
                         ],
@@ -1015,7 +993,7 @@ class _RecentSalesBlock extends StatelessWidget {
 }
 
 // ============================================================================
-// RECENT MOVEMENTS (stock controller instead of recent sales)
+// RECENT STOCK MOVEMENTS (for stock controllers)
 // ============================================================================
 
 class _MovementsBlock extends StatelessWidget {
@@ -1046,30 +1024,35 @@ class _MovementsBlock extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          'Recent stock movements',
-          style: empSans(13.5, weight: FontWeight.w700, color: empInk),
+        EmpSectionHeader(
+          title: 'Recent stock movements (${moves.length})',
         ),
-        const SizedBox(height: 8),
+        const SizedBox(height: 10),
         if (moves.isEmpty)
           const EmpEmpty(
             icon: Icons.swap_horiz_outlined,
-            message: 'No stock movements recorded yet.',
+            title: 'No movements yet',
+            message: 'Stock deliveries and sales will show here.',
           )
         else
-          EmpCard(
-            padding: EdgeInsets.zero,
+          Container(
+            decoration: BoxDecoration(
+              color: Colors.white,
+              border: Border.all(color: empBorder),
+              borderRadius: BorderRadius.circular(4),
+            ),
             child: Column(
               children: List.generate(moves.length, (i) {
                 final m = moves[i];
                 final out = _isOut(m.type);
+                final isLast = i == moves.length - 1;
                 return Container(
                   padding: const EdgeInsets.symmetric(
                     horizontal: 16,
-                    vertical: 11,
+                    vertical: 12,
                   ),
                   decoration: BoxDecoration(
-                    border: i == moves.length - 1
+                    border: isLast
                         ? null
                         : const Border(bottom: BorderSide(color: empBorder)),
                   ),
@@ -1082,12 +1065,12 @@ class _MovementsBlock extends StatelessWidget {
                             Text(
                               m.itemName,
                               style: empSans(
-                                13,
+                                13.5,
                                 weight: FontWeight.w600,
                                 color: empInk,
                               ),
                             ),
-                            const SizedBox(height: 2),
+                            const SizedBox(height: 1),
                             Text(
                               '${_label(m.type)} · ${_timeLabel(m.time)}',
                               style: empSans(11.5, color: empMuted),
@@ -1115,7 +1098,7 @@ class _MovementsBlock extends StatelessWidget {
 }
 
 // ============================================================================
-// CUSTOMERS OWING + RECORD PAYMENT
+// CUSTOMERS OWING & PAYMENT
 // ============================================================================
 
 class _OwingBlock extends StatelessWidget {
@@ -1130,74 +1113,62 @@ class _OwingBlock extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onOpenReports,
-      borderRadius: BorderRadius.circular(4),
-      child: EmpCard(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Container(
-                  width: 38,
-                  height: 38,
-                  decoration: BoxDecoration(
-                    color: empPrimaryTint,
-                    borderRadius: BorderRadius.circular(4),
-                  ),
-                  child: const Icon(
-                    Icons.people_outline,
-                    size: 19,
-                    color: empPrimary,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        data.owingCount == 0
-                            ? 'No outstanding balances'
-                            : '${data.owingCount} ${data.owingCount == 1 ? 'customer owes' : 'customers owe'} ${empMk(data.owingTotal)}',
-                        style: empSans(
-                          13.5,
-                          weight: FontWeight.w700,
-                          color: empInk,
-                        ),
-                      ),
-                      Text(
-                        'Customer debts at this branch',
-                        style: empSans(11.5, color: empMuted),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-            if (data.owingCount > 0) ...[
-              const SizedBox(height: 12),
-              SizedBox(
-                width: double.infinity,
-                child: OutlinedButton.icon(
-                  onPressed: onPay,
-                  style: OutlinedButton.styleFrom(
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        EmpSectionHeader(
+          title: 'Customer debts',
+          action: data.owingCount > 0
+              ? TextButton(
+                  onPressed: onOpenReports,
+                  style: TextButton.styleFrom(
                     foregroundColor: empPrimary,
-                    minimumSize: const Size(0, 44),
-                    side: const BorderSide(color: empBorder),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(4),
-                    ),
+                    minimumSize: const Size(0, 32),
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
                   ),
-                  icon: const Icon(Icons.payments_outlined, size: 18),
-                  label: const Text('Record payment'),
+                  child: Text('View list', style: empSans(12, weight: FontWeight.w600, color: empPrimary)),
+                )
+              : null,
+        ),
+        const SizedBox(height: 8),
+        Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            border: Border.all(color: empBorder),
+            borderRadius: BorderRadius.circular(4),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                data.owingCount == 0
+                    ? 'All customer accounts are clear'
+                    : '${data.owingCount} ${data.owingCount == 1 ? 'customer owes' : 'customers owe'} ${empMk(data.owingTotal)}',
+                style: empSans(
+                  13.5,
+                  weight: FontWeight.w700,
+                  color: data.owingCount == 0 ? empInk : empDanger,
                 ),
               ),
+              const SizedBox(height: 2),
+              Text(
+                'Credit balances outstanding at this branch',
+                style: empSans(12, color: empMuted),
+              ),
+              if (data.owingCount > 0) ...[
+                const SizedBox(height: 12),
+                OutlinedButton.icon(
+                  onPressed: onPay,
+                  style: empOutlineButton(height: 36),
+                  icon: const Icon(Icons.payments_outlined, size: 16),
+                  label: const Text('Record payment'),
+                ),
+              ],
             ],
-          ],
+          ),
         ),
-      ),
+      ],
     );
   }
 }
@@ -1293,10 +1264,10 @@ class _PaymentSheetState extends State<_PaymentSheet> {
   Widget build(BuildContext context) {
     return EmpSheetFrame(
       title: 'Record payment',
-      subtitle: 'A customer paying down their balance.',
+      subtitle: 'Customer settling credit balance.',
       child: _loading
           ? const Padding(
-              padding: EdgeInsets.symmetric(vertical: 28),
+              padding: EdgeInsets.symmetric(vertical: 24),
               child: Center(
                 child: CircularProgressIndicator(color: empPrimary),
               ),

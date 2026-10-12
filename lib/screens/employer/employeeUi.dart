@@ -2,16 +2,19 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 // ============================================================================
-// EMPLOYEE UI — shared tokens + small widgets for branch-staff screens.
-// Mirrors the brand (blue/gold/white) used on the admin side. Colour is used
-// only for meaning: amber = low stock, red = expiry/danger, blue = actions.
+// EMPLOYEE UI — Shared tokens and minimal UI primitives for branch staff.
+// Adheres strictly to minimal, professional design:
+//   - No excessive shadows, no glowing borders, no colour gradients.
+//   - Restrained border radius (4px standard, 3px pills, 6px modal sheets).
+//   - Hierarchy established via typography, spacing, contrast, dividers, layout.
+//   - Zero generic filler/vanity metrics or meaningless UI noise.
 // ============================================================================
 
 const double empWideBreakpoint = 760;
 const double empTabletBreakpoint = 600;
 
-const Color empBg = Color(0xFFFFFFFF);
-const Color empSurface = Color(0xFFFFFFFF);
+const Color empBg = Color(0xFFF7F9FF);
+const Color empSurface = Colors.white;
 const Color empBorder = Color(0xFFD9E2F5);
 const Color empInk = Color(0xFF0F2038);
 const Color empMuted = Color(0xFF5B6B8C);
@@ -25,11 +28,35 @@ const Color empDangerTint = Color(0xFFFBEBEA);
 const Color empSuccess = Color(0xFF2E7D32);
 const Color empSuccessTint = Color(0xFFE8F5E9);
 
-TextStyle empSans(double size, {FontWeight? weight, Color? color, double? height}) =>
-    GoogleFonts.ibmPlexSans(fontSize: size, fontWeight: weight, color: color, height: height);
+TextStyle empSans(
+  double size, {
+  FontWeight? weight,
+  Color? color,
+  double? height,
+  double? letterSpacing,
+}) =>
+    GoogleFonts.ibmPlexSans(
+      fontSize: size,
+      fontWeight: weight,
+      color: color,
+      height: height,
+      letterSpacing: letterSpacing,
+    );
 
-TextStyle empMono(double size, {FontWeight? weight, Color? color}) =>
-    GoogleFonts.ibmPlexMono(fontSize: size, fontWeight: weight, color: color);
+TextStyle empMono(
+  double size, {
+  FontWeight? weight,
+  Color? color,
+  double? height,
+  double? letterSpacing,
+}) =>
+    GoogleFonts.ibmPlexMono(
+      fontSize: size,
+      fontWeight: weight,
+      color: color,
+      height: height,
+      letterSpacing: letterSpacing,
+    );
 
 String empMk(double amount) {
   final neg = amount < 0;
@@ -42,13 +69,17 @@ String empMk(double amount) {
   return 'MK ${neg ? '-' : ''}$buf';
 }
 
-String empQty(double q) => q.toStringAsFixed(q.truncateToDouble() == q ? 0 : 2);
+String empQty(double q) =>
+    q.toStringAsFixed(q.truncateToDouble() == q ? 0 : 2);
 
 void empToast(BuildContext context, String message, {bool error = false}) {
   ScaffoldMessenger.of(context).hideCurrentSnackBar();
   ScaffoldMessenger.of(context).showSnackBar(
     SnackBar(
-      content: Text(message, style: empSans(13.5, weight: FontWeight.w500, color: Colors.white)),
+      content: Text(
+        message,
+        style: empSans(13, weight: FontWeight.w500, color: Colors.white),
+      ),
       backgroundColor: error ? empDanger : empPrimary,
       behavior: SnackBarBehavior.floating,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
@@ -58,19 +89,28 @@ void empToast(BuildContext context, String message, {bool error = false}) {
   );
 }
 
-/// Plain white card used for every Home block.
+/// Single border/background container for structured grouping without shadows.
 class EmpCard extends StatelessWidget {
   final Widget child;
   final EdgeInsetsGeometry padding;
-  const EmpCard({super.key, required this.child, this.padding = const EdgeInsets.all(16)});
+  final Color? color;
+  final Border? border;
+
+  const EmpCard({
+    super.key,
+    required this.child,
+    this.padding = const EdgeInsets.all(16),
+    this.color,
+    this.border,
+  });
 
   @override
   Widget build(BuildContext context) {
     return Container(
       padding: padding,
       decoration: BoxDecoration(
-        color: empSurface,
-        border: Border.all(color: empBorder),
+        color: color ?? empSurface,
+        border: border ?? Border.all(color: empBorder),
         borderRadius: BorderRadius.circular(4),
       ),
       child: child,
@@ -78,25 +118,251 @@ class EmpCard extends StatelessWidget {
   }
 }
 
+/// Clean empty state with restrained icon, title, description, and optional action.
 class EmpEmpty extends StatelessWidget {
   final IconData icon;
   final String message;
-  const EmpEmpty({super.key, required this.icon, required this.message});
+  final String? title;
+  final Widget? action;
+
+  const EmpEmpty({
+    super.key,
+    required this.icon,
+    required this.message,
+    this.title,
+    this.action,
+  });
 
   @override
   Widget build(BuildContext context) {
-    return EmpCard(
-      child: Row(
-        children: [
-          Container(
-            width: 38,
-            height: 38,
-            decoration: BoxDecoration(color: empPrimaryTint, borderRadius: BorderRadius.circular(4)),
-            child: Icon(icon, size: 19, color: empPrimary),
-          ),
-          const SizedBox(width: 12),
-          Expanded(child: Text(message, style: empSans(13, color: empMuted, height: 1.4))),
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 36, horizontal: 16),
+      child: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 30, color: empMuted),
+            const SizedBox(height: 10),
+            if (title != null) ...[
+              Text(
+                title!,
+                style: empSans(14, weight: FontWeight.w600, color: empInk),
+              ),
+              const SizedBox(height: 4),
+            ],
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 340),
+              child: Text(
+                message,
+                textAlign: TextAlign.center,
+                style: empSans(12.5, color: empMuted, height: 1.4),
+              ),
+            ),
+            if (action != null) ...[
+              const SizedBox(height: 14),
+              action!,
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Clean metric unit using typography scale, weight, and subtle colors instead of box cards.
+class EmpStatMetric extends StatelessWidget {
+  final String label;
+  final String value;
+  final String? sub;
+  final Color? valueColor;
+  final bool mono;
+
+  const EmpStatMetric({
+    super.key,
+    required this.label,
+    required this.value,
+    this.sub,
+    this.valueColor,
+    this.mono = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(label, style: empSans(12, color: empMuted)),
+        const SizedBox(height: 4),
+        Text(
+          value,
+          style: mono
+              ? empMono(20, weight: FontWeight.w700, color: valueColor ?? empInk)
+              : empSans(20, weight: FontWeight.w700, color: valueColor ?? empInk),
+        ),
+        if (sub != null) ...[
+          const SizedBox(height: 2),
+          Text(sub!, style: empSans(11.5, color: empMuted)),
         ],
+      ],
+    );
+  }
+}
+
+/// Section title with optional action, establishing hierarchy with typography and whitespace.
+class EmpSectionHeader extends StatelessWidget {
+  final String title;
+  final String? subtitle;
+  final Widget? action;
+
+  const EmpSectionHeader({
+    super.key,
+    required this.title,
+    this.subtitle,
+    this.action,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                style: empSans(14, weight: FontWeight.w700, color: empInk),
+              ),
+              if (subtitle != null) ...[
+                const SizedBox(height: 2),
+                Text(subtitle!, style: empSans(12, color: empMuted)),
+              ],
+            ],
+          ),
+        ),
+        if (action != null) action!,
+      ],
+    );
+  }
+}
+
+/// Compact status indicator badge with 3px radius.
+class EmpStatusPill extends StatelessWidget {
+  final String label;
+  final Color bg;
+  final Color fg;
+  final IconData? icon;
+
+  const EmpStatusPill({
+    super.key,
+    required this.label,
+    required this.bg,
+    required this.fg,
+    this.icon,
+  });
+
+  factory EmpStatusPill.active([String label = 'Active']) => EmpStatusPill(
+        label: label,
+        bg: empSuccessTint,
+        fg: empSuccess,
+        icon: Icons.check_circle_outline,
+      );
+
+  factory EmpStatusPill.warning(String label, {IconData? icon}) => EmpStatusPill(
+        label: label,
+        bg: empWarnTint,
+        fg: empWarn,
+        icon: icon,
+      );
+
+  factory EmpStatusPill.danger(String label, {IconData? icon}) => EmpStatusPill(
+        label: label,
+        bg: empDangerTint,
+        fg: empDanger,
+        icon: icon,
+      );
+
+  factory EmpStatusPill.neutral(String label, {IconData? icon}) => EmpStatusPill(
+        label: label,
+        bg: const Color(0xFFF0F4FD),
+        fg: empMuted,
+        icon: icon,
+      );
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(3),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (icon != null) ...[
+            Icon(icon, size: 11, color: fg),
+            const SizedBox(width: 4),
+          ],
+          Text(label, style: empSans(11, weight: FontWeight.w600, color: fg)),
+        ],
+      ),
+    );
+  }
+}
+
+/// Clean flat filter chip with 4px radius.
+class EmpFilterPill extends StatelessWidget {
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+  final IconData? icon;
+
+  const EmpFilterPill({
+    super.key,
+    required this.label,
+    required this.selected,
+    required this.onTap,
+    this.icon,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: selected ? empPrimary : Colors.white,
+      borderRadius: BorderRadius.circular(4),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(4),
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 6),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(4),
+            border: Border.all(color: selected ? empPrimary : empBorder),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (icon != null) ...[
+                Icon(
+                  icon,
+                  size: 13.5,
+                  color: selected ? Colors.white : empMuted,
+                ),
+                const SizedBox(width: 5),
+              ],
+              Text(
+                label,
+                style: empSans(
+                  12,
+                  weight: FontWeight.w600,
+                  color: selected ? Colors.white : empMuted,
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -107,7 +373,13 @@ class EmpSheetFrame extends StatelessWidget {
   final String title;
   final String? subtitle;
   final Widget child;
-  const EmpSheetFrame({super.key, required this.title, this.subtitle, required this.child});
+
+  const EmpSheetFrame({
+    super.key,
+    required this.title,
+    this.subtitle,
+    required this.child,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -116,30 +388,30 @@ class EmpSheetFrame extends StatelessWidget {
         color: Colors.white,
         borderRadius: BorderRadius.vertical(top: Radius.circular(6)),
       ),
-      padding: EdgeInsets.fromLTRB(24, 12, 24, MediaQuery.of(context).viewInsets.bottom + 24),
+      padding: EdgeInsets.fromLTRB(
+        24,
+        18,
+        24,
+        MediaQuery.of(context).viewInsets.bottom + 24,
+      ),
       child: SingleChildScrollView(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Center(
-              child: Container(
-                width: 40,
-                height: 4,
-                decoration: BoxDecoration(color: empBorder, borderRadius: BorderRadius.circular(2)),
-              ),
-            ),
-            const SizedBox(height: 12),
             Row(
               children: [
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(title, style: empSans(18, weight: FontWeight.w700, color: empInk)),
+                      Text(
+                        title,
+                        style: empSans(17, weight: FontWeight.w700, color: empInk),
+                      ),
                       if (subtitle != null) ...[
-                        const SizedBox(height: 4),
-                        Text(subtitle!, style: empSans(13, color: empMuted)),
+                        const SizedBox(height: 3),
+                        Text(subtitle!, style: empSans(12.5, color: empMuted)),
                       ],
                     ],
                   ),
@@ -163,11 +435,11 @@ class EmpSheetFrame extends StatelessWidget {
 InputDecoration empField(String label, {String? hint}) => InputDecoration(
       labelText: label,
       hintText: hint,
-      labelStyle: empSans(13.5, color: empMuted),
-      hintStyle: empSans(13.5, color: empMuted),
+      labelStyle: empSans(13, color: empMuted),
+      hintStyle: empSans(13, color: empMuted),
       filled: true,
       fillColor: Colors.white,
-      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(4),
         borderSide: const BorderSide(color: empBorder),
@@ -178,15 +450,31 @@ InputDecoration empField(String label, {String? hint}) => InputDecoration(
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(4),
-        borderSide: const BorderSide(color: empPrimary, width: 1.5),
+        borderSide: const BorderSide(color: empPrimary),
+      ),
+      errorBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(4),
+        borderSide: const BorderSide(color: empDanger),
+      ),
+      focusedErrorBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(4),
+        borderSide: const BorderSide(color: empDanger),
       ),
     );
 
-ButtonStyle empPrimaryButton({double height = 48}) => FilledButton.styleFrom(
+ButtonStyle empPrimaryButton({double height = 40}) => FilledButton.styleFrom(
       backgroundColor: empPrimary,
       foregroundColor: Colors.white,
       minimumSize: Size(0, height),
-      textStyle: empSans(15, weight: FontWeight.w600),
+      textStyle: empSans(13.5, weight: FontWeight.w600),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
       elevation: 0,
+    );
+
+ButtonStyle empOutlineButton({double height = 40}) => OutlinedButton.styleFrom(
+      foregroundColor: empInk,
+      minimumSize: Size(0, height),
+      textStyle: empSans(13.5, weight: FontWeight.w600),
+      side: const BorderSide(color: empBorder),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
     );
