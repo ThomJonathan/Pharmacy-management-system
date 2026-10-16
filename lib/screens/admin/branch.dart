@@ -347,6 +347,29 @@ class _BranchCard extends StatelessWidget {
                   ),
                 ],
               ),
+              if (b.businessTypes.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 4,
+                  children: [
+                    for (final t in b.businessTypes)
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF1F5F9),
+                          borderRadius: BorderRadius.circular(3),
+                          border: Border.all(color: const Color(0xFFE2E8F0)),
+                        ),
+                        child: Text(
+                          t,
+                          style: sans(11, weight: FontWeight.w600, color: kInkMuted),
+                        ),
+                      ),
+                  ],
+                ),
+              ],
+              const SizedBox(height: 10),
               Padding(
                 padding: const EdgeInsets.only(right: 10),
                 child: Row(
@@ -401,31 +424,88 @@ class _BranchFormState extends State<_BranchForm> {
   late final _name = TextEditingController(text: widget.branch?.name ?? '');
   late final _location = TextEditingController(text: widget.branch?.location ?? '');
   late final _phone = TextEditingController(text: widget.branch?.phone ?? '');
+  final _newTypeCtrl = TextEditingController();
+
+  late final Set<String> _selectedTypes = (widget.branch != null && widget.branch!.businessTypes.isNotEmpty)
+      ? widget.branch!.businessTypes.toSet()
+      : {'Pharmacy'};
+  List<String> _availableTypes = ['Pharmacy', 'Cosmetics'];
+  bool _loadingTypes = true;
+
   bool _saving = false;
   String? _error;
 
   bool get _isEdit => widget.branch != null;
 
   @override
+  void initState() {
+    super.initState();
+    _loadTypes();
+  }
+
+  Future<void> _loadTypes() async {
+    try {
+      final types = await widget.repo.fetchBusinessTypes();
+      if (!mounted) return;
+      setState(() {
+        final merged = <String>{..._availableTypes, ...types, ..._selectedTypes};
+        _availableTypes = merged.toList()..sort();
+        _loadingTypes = false;
+      });
+    } catch (_) {
+      if (mounted) setState(() => _loadingTypes = false);
+    }
+  }
+
+  void _addNewType() {
+    final text = _newTypeCtrl.text.trim();
+    if (text.isEmpty) return;
+    setState(() {
+      if (!_availableTypes.any((t) => t.toLowerCase() == text.toLowerCase())) {
+        _availableTypes.add(text);
+        _availableTypes.sort();
+      }
+      _selectedTypes.add(text);
+      _newTypeCtrl.clear();
+      _error = null;
+    });
+  }
+
+  @override
   void dispose() {
     _name.dispose();
     _location.dispose();
     _phone.dispose();
+    _newTypeCtrl.dispose();
     super.dispose();
   }
 
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
+    if (_selectedTypes.isEmpty) {
+      setState(() => _error = 'Choose at least one business type.');
+      return;
+    }
     setState(() {
       _saving = true;
       _error = null;
     });
     try {
       if (_isEdit) {
-        await widget.repo.updateBranch(widget.branch!.id,
-            name: _name.text, location: _location.text, phone: _phone.text);
+        await widget.repo.updateBranch(
+          widget.branch!.id,
+          name: _name.text,
+          location: _location.text,
+          phone: _phone.text,
+          businessTypes: _selectedTypes.toList(),
+        );
       } else {
-        await widget.repo.createBranch(name: _name.text, location: _location.text, phone: _phone.text);
+        await widget.repo.createBranch(
+          name: _name.text,
+          location: _location.text,
+          phone: _phone.text,
+          businessTypes: _selectedTypes.toList(),
+        );
       }
       if (mounted) {
         Navigator.of(context).pop(_isEdit ? 'Branch updated.' : '${_name.text.trim()} added.');
@@ -472,14 +552,81 @@ class _BranchFormState extends State<_BranchForm> {
             TextFormField(
               controller: _phone,
               keyboardType: TextInputType.phone,
-              textInputAction: TextInputAction.done,
+              textInputAction: TextInputAction.next,
               style: sans(14, color: kInk),
               cursorColor: kPrimary,
               decoration: fieldDecoration('Phone (optional)'),
-              onFieldSubmitted: (_) => _save(),
+            ),
+            const SizedBox(height: 18),
+            Text('Business types', style: sans(13, weight: FontWeight.w600, color: kInk)),
+            const SizedBox(height: 4),
+            Text(
+              'A branch only sees products of the business types it runs. Select one or more:',
+              style: sans(12, color: kInkMuted),
+            ),
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                for (final type in _availableTypes)
+                  FilterChip(
+                    label: Text(type),
+                    selected: _selectedTypes.contains(type),
+                    selectedColor: kPrimary.withOpacity(0.14),
+                    checkmarkColor: kPrimary,
+                    labelStyle: sans(
+                      13,
+                      weight: _selectedTypes.contains(type) ? FontWeight.w600 : FontWeight.w500,
+                      color: _selectedTypes.contains(type) ? kPrimary : kInk,
+                    ),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(4),
+                      side: BorderSide(
+                        color: _selectedTypes.contains(type) ? kPrimary : const Color(0xFFD9E2F5),
+                      ),
+                    ),
+                    onSelected: (selected) {
+                      setState(() {
+                        if (selected) {
+                          _selectedTypes.add(type);
+                        } else {
+                          if (_selectedTypes.length > 1) {
+                            _selectedTypes.remove(type);
+                          }
+                        }
+                        _error = null;
+                      });
+                    },
+                  ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                Expanded(
+                  child: TextFormField(
+                    controller: _newTypeCtrl,
+                    textCapitalization: TextCapitalization.words,
+                    style: sans(13, color: kInk),
+                    decoration: fieldDecoration(
+                      'Or type a new business type…',
+                      hint: 'e.g. Electronics, Clothing',
+                    ),
+                    onFieldSubmitted: (_) => _addNewType(),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                OutlinedButton.icon(
+                  onPressed: _addNewType,
+                  style: outlineButtonStyle(height: 44),
+                  icon: const Icon(Icons.add, size: 16),
+                  label: const Text('Add type'),
+                ),
+              ],
             ),
             if (_error != null) ...[
-              const SizedBox(height: 12),
+              const SizedBox(height: 14),
               Text(_error!, style: sans(13, color: kDanger)),
             ],
             const SizedBox(height: 20),

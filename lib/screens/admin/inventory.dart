@@ -203,6 +203,8 @@ class _InventoryScreenState extends State<InventoryScreen> {
   List<PurchaseOrder> _purchases = [];
   List<SupplierBalance> _balances = [];
   List<CatalogItem> _catalog = [];
+  List<BusinessTypeOption> _businessTypes = [];
+  List<String> _branchBusinessTypeIds = [];
 
   @override
   void initState() {
@@ -255,7 +257,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
       _error = null;
     });
     try {
-      final results = await Future.wait([
+      final futures = <Future<dynamic>>[
         _repo.fetchBranches(),
         _repo.fetchCategories(),
         _repo.fetchOverview(branchId: _branchId),
@@ -270,7 +272,13 @@ class _InventoryScreenState extends State<InventoryScreen> {
         _repo.fetchPurchases(branchId: _branchId),
         _repo.fetchSupplierBalances(),
         _repo.fetchCatalog(includeInactive: true),
-      ]);
+        _repo.fetchBusinessTypes(),
+        if (_branchId != null)
+          _repo.fetchBranchBusinessTypeIds(_branchId!)
+        else
+          Future.value(<String>[]),
+      ];
+      final results = await Future.wait(futures);
       if (!mounted) return;
       setState(() {
         _branches = results[0] as List<InvBranch>;
@@ -281,6 +289,8 @@ class _InventoryScreenState extends State<InventoryScreen> {
         _purchases = results[5] as List<PurchaseOrder>;
         _balances = results[6] as List<SupplierBalance>;
         _catalog = results[7] as List<CatalogItem>;
+        _businessTypes = results[8] as List<BusinessTypeOption>;
+        _branchBusinessTypeIds = results[9] as List<String>;
         _loading = false;
       });
     } catch (e) {
@@ -320,6 +330,9 @@ class _InventoryScreenState extends State<InventoryScreen> {
     return _catalog.where((c) {
       if (!_showInactive && !c.isActive) return false;
       if (_category != null && c.category != _category) return false;
+      if (_branchId != null && _branchBusinessTypeIds.isNotEmpty) {
+        if (!_branchBusinessTypeIds.contains(c.businessTypeId)) return false;
+      }
       if (q.isEmpty) return true;
       return c.name.toLowerCase().contains(q);
     }).toList();
@@ -425,8 +438,12 @@ class _InventoryScreenState extends State<InventoryScreen> {
   Future<void> _addOrEditItem([CatalogItem? item]) async {
     final msg = await showAdaptiveSheet<String>(
       context,
-      builder: (_) =>
-          _ItemFormSheet(repo: _repo, item: item, categories: _categories),
+      builder: (_) => _ItemFormSheet(
+        repo: _repo,
+        item: item,
+        categories: _categories,
+        businessTypes: _businessTypes,
+      ),
     );
     if (msg == null) return;
     await _load();
@@ -2103,7 +2120,7 @@ class _CatalogTab extends StatelessWidget {
                         ),
                         const SizedBox(height: 2),
                         Text(
-                          '${c.category} · ${c.unit} · reorder at ${_fmtQty(c.reorderLevel)}',
+                          '${c.businessTypeName} · ${c.category} · ${c.unit} · reorder at ${_fmtQty(c.reorderLevel)}',
                           style: sans(11.5, color: kInkMuted),
                         ),
                       ],
@@ -2789,10 +2806,12 @@ class _ItemFormSheet extends StatefulWidget {
   final InventoryRepository repo;
   final CatalogItem? item;
   final List<String> categories;
+  final List<BusinessTypeOption> businessTypes;
   const _ItemFormSheet({
     required this.repo,
     this.item,
     required this.categories,
+    this.businessTypes = const [],
   });
 
   @override
@@ -2815,8 +2834,37 @@ class _ItemFormSheetState extends State<_ItemFormSheet> {
     text: (widget.item?.reorderLevel ?? 10).toStringAsFixed(0),
   );
   late bool _rx = widget.item?.requiresPrescription ?? false;
+  late List<BusinessTypeOption> _types = List.from(widget.businessTypes);
+  String? _businessTypeId;
+
   bool _saving = false;
   String? _formError;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.item != null && widget.item!.businessTypeId.isNotEmpty) {
+      _businessTypeId = widget.item!.businessTypeId;
+    } else if (_types.isNotEmpty) {
+      _businessTypeId = _types.first.id;
+    }
+    if (_types.isEmpty) {
+      _loadTypes();
+    }
+  }
+
+  Future<void> _loadTypes() async {
+    try {
+      final t = await widget.repo.fetchBusinessTypes();
+      if (!mounted) return;
+      setState(() {
+        _types = t;
+        if (_businessTypeId == null && _types.isNotEmpty) {
+          _businessTypeId = _types.first.id;
+        }
+      });
+    } catch (_) {}
+  }
 
   @override
   void dispose() {
@@ -2833,9 +2881,54 @@ class _ItemFormSheetState extends State<_ItemFormSheet> {
       setState(() => _formError = 'Item name is required.');
       return;
     }
+    if (_businessTypeId == null || _businessTypeId!.isEmpty) {
+      setState(() => _formError = 'Please select a business type.');
+      return;
+    }
     if (reorder == null || reorder < 0) {
       setState(() => _formError = 'Reorder level must be zero or above.');
       return;
+    }
+    // Duplicate guard: same name (case-insensitive) already catalogued.
+    // Same unit means it is the same item — blocked, no override.
+    // Different unit may legitimately be a separate product (bottle vs
+    // tablets), so that case only warns and lets the user confirm.
+    // Advisory only: a failed lookup must not block the save.
+    try {
+      final matches = await widget.repo.findItemsByName(_name.text);
+      if (widget.item != null) {
+        matches.removeWhere((c) => c.id == widget.item!.id);
+      }
+      if (matches.isNotEmpty && mounted) {
+        final enteredUnit =
+            _unit.text.trim().isEmpty ? 'unit' : _unit.text.trim();
+        final sameUnit = matches.where(
+          (c) => c.unit.trim().toLowerCase() == enteredUnit.toLowerCase(),
+        ).toList();
+        if (sameUnit.isNotEmpty) {
+          final listed = sameUnit
+              .take(3)
+              .map((c) => '• ${c.name} (unit: ${c.unit} · ${c.businessTypeName})')
+              .join('\n');
+          setState(() => _formError =
+              '“${_name.text.trim()}” is already in the catalog with the same unit ($enteredUnit):\n$listed\nThat is the same item — pick it from the catalog instead of adding it again.');
+          return;
+        }
+        final listed = matches
+            .take(5)
+            .map((c) => '• ${c.name} (unit: ${c.unit} · ${c.businessTypeName})')
+            .join('\n');
+        final proceed = await showConfirm(
+          context,
+          title: 'Same name, different unit',
+          message:
+              '“${_name.text.trim()}” is already in the catalog with a different unit:\n$listed\n\nYou entered unit “$enteredUnit”. The same product sold in a different unit counts as a separate product — continue only if that is what you mean.',
+          confirmLabel: 'Add anyway',
+        );
+        if (!proceed) return;
+      }
+    } catch (_) {
+      // Fall through to the save below.
     }
     setState(() {
       _saving = true;
@@ -2849,6 +2942,7 @@ class _ItemFormSheetState extends State<_ItemFormSheet> {
           unit: _unit.text,
           reorderLevel: reorder,
           requiresPrescription: _rx,
+          businessTypeId: _businessTypeId!,
         );
       } else {
         await widget.repo.updateItem(
@@ -2858,6 +2952,7 @@ class _ItemFormSheetState extends State<_ItemFormSheet> {
           unit: _unit.text,
           reorderLevel: reorder,
           requiresPrescription: _rx,
+          businessTypeId: _businessTypeId!,
         );
       }
       if (mounted) {
@@ -2897,6 +2992,22 @@ class _ItemFormSheetState extends State<_ItemFormSheet> {
             decoration: fieldDecoration('Item name'),
           ),
           const SizedBox(height: 12),
+          if (_types.isNotEmpty) ...[
+            DropdownButtonFormField<String>(
+              value: _businessTypeId,
+              decoration: fieldDecoration('Business type'),
+              style: sans(14, color: kInk),
+              items: [
+                for (final bt in _types)
+                  DropdownMenuItem(
+                    value: bt.id,
+                    child: Text(bt.name, style: sans(14, color: kInk)),
+                  ),
+              ],
+              onChanged: (v) => setState(() => _businessTypeId = v),
+            ),
+            const SizedBox(height: 12),
+          ],
           TextField(
             controller: _category,
             style: sans(14, color: kInk),

@@ -1977,3 +1977,389 @@ BEGIN
   END IF;
 END
 $$;
+
+
+
+-- ============================================================================
+-- BRANCH BUSINESS TYPES: each branch (shop) only sees the catalogue(s) of the
+-- business type(s) it runs. A branch can opt in to more than one type.
+-- Run once, after all earlier migrations (reuses is_admin(), user_branch_id()).
+--
+-- Model:
+--   business_types         e.g. Pharmacy, Cosmetics (admin can type new ones)
+--   items.business_type_id each catalogue item belongs to exactly one type
+--   branch_business_types  which types each branch runs (1 or more)
+-- ============================================================================
+
+-- 1. Business types ----------------------------------------------------------
+CREATE TABLE IF NOT EXISTS business_types (
+                                              id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    name        text NOT NULL,
+    is_active   boolean NOT NULL DEFAULT true,
+    created_at  timestamptz NOT NULL DEFAULT now()
+    );
+-- case-insensitive unique, so "cosmetics" and "Cosmetics" can't both exist
+CREATE UNIQUE INDEX IF NOT EXISTS uq_business_types_name ON business_types (lower(trim(name)));
+
+INSERT INTO business_types (name) VALUES ('Pharmacy'), ('Cosmetics')
+    ON CONFLICT DO NOTHING;
+
+-- 2. Items belong to a business type -----------------------------------------
+ALTER TABLE items ADD COLUMN IF NOT EXISTS business_type_id uuid REFERENCES business_types(id);
+
+-- everything that exists today is a drug-store item
+UPDATE items
+SET business_type_id = (SELECT id FROM business_types WHERE lower(name) = 'pharmacy')
+WHERE business_type_id IS NULL;
+
+ALTER TABLE items ALTER COLUMN business_type_id SET NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_items_business_type ON items(business_type_id);
+
+-- 3. Which types each branch runs ---------------------------------------------
+CREATE TABLE IF NOT EXISTS branch_business_types (
+                                                     branch_id         uuid NOT NULL REFERENCES branches(id) ON DELETE CASCADE,
+    business_type_id  uuid NOT NULL REFERENCES business_types(id),
+    created_at        timestamptz NOT NULL DEFAULT now(),
+    PRIMARY KEY (branch_id, business_type_id)
+    );
+CREATE INDEX IF NOT EXISTS idx_bbt_type ON branch_business_types(business_type_id);
+
+-- existing branches keep working: they all become Pharmacy branches
+INSERT INTO branch_business_types (branch_id, business_type_id)
+SELECT b.id, (SELECT id FROM business_types WHERE lower(name) = 'pharmacy')
+FROM branches b
+    ON CONFLICT DO NOTHING;
+
+-- 4. Helper (SECURITY DEFINER avoids RLS recursion) ----------------------------
+CREATE OR REPLACE FUNCTION branch_runs_business_type(p_branch uuid, p_type uuid)
+RETURNS boolean
+LANGUAGE sql SECURITY DEFINER STABLE SET search_path = public AS $$
+SELECT EXISTS (SELECT 1 FROM branch_business_types
+               WHERE branch_id = p_branch AND business_type_id = p_type);
+$$;
+
+-- 5. RLS -----------------------------------------------------------------------
+ALTER TABLE business_types ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Authenticated users view business types"
+    ON business_types FOR SELECT USING (auth.uid() IS NOT NULL);
+CREATE POLICY "Admins manage business types"
+    ON business_types FOR ALL USING (is_admin()) WITH CHECK (is_admin());
+
+ALTER TABLE branch_business_types ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "View branch business types: admin all, staff own branch"
+    ON branch_business_types FOR SELECT
+                                            USING (is_admin() OR branch_id = user_branch_id());
+CREATE POLICY "Admins manage branch business types"
+    ON branch_business_types FOR ALL USING (is_admin()) WITH CHECK (is_admin());
+
+-- Catalogue visibility: admins see every item (the app filters by the branch
+-- being viewed); staff only see items of the types their branch runs.
+-- This also filters every security_invoker view built on items.
+DROP POLICY IF EXISTS "Authenticated users can view items" ON items;
+CREATE POLICY "View items: admin all, staff by branch business type"
+    ON items FOR SELECT
+                                        USING (is_admin() OR branch_runs_business_type(user_branch_id(), business_type_id));
+
+-- 6. Stop stock of the wrong type entering a branch ----------------------------
+-- Covers receive_stock_delivery() and any direct inventory insert.
+CREATE OR REPLACE FUNCTION fn_check_inventory_business_type() RETURNS trigger
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+DECLARE v_type uuid;
+BEGIN
+SELECT business_type_id INTO v_type FROM items WHERE id = NEW.item_id;
+IF NOT branch_runs_business_type(NEW.branch_id, v_type) THEN
+        RAISE EXCEPTION 'This branch does not run the business type of this item. Enable it in the branch settings first.';
+END IF;
+RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_check_inventory_business_type ON inventory;
+CREATE TRIGGER trg_check_inventory_business_type
+    BEFORE INSERT ON inventory
+    FOR EACH ROW EXECUTE FUNCTION fn_check_inventory_business_type();
+
+-- 7. Admin sets a branch's business types in one call --------------------------
+-- p_type_names are typed names; unknown ones are created on the fly, so the
+-- admin can type "Electronics" without a separate "add type" screen.
+-- A type can't be removed from a branch while that branch still holds stock of it.
+CREATE OR REPLACE FUNCTION admin_set_branch_business_types(
+    p_branch_id uuid, p_type_names text[]) RETURNS void
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+DECLARE
+v_name   text;
+    v_id     uuid;
+    v_ids    uuid[] := '{}';
+    v_blocked text;
+BEGIN
+    IF NOT is_admin() THEN RAISE EXCEPTION 'Only admins can change a branch''s business type.'; END IF;
+    IF NOT EXISTS (SELECT 1 FROM branches WHERE id = p_branch_id) THEN
+        RAISE EXCEPTION 'Branch not found.';
+END IF;
+    IF p_type_names IS NULL OR array_length(p_type_names, 1) IS NULL THEN
+        RAISE EXCEPTION 'Choose at least one business type.';
+END IF;
+
+    FOREACH v_name IN ARRAY p_type_names LOOP
+        v_name := trim(v_name);
+CONTINUE WHEN v_name = '';
+SELECT id INTO v_id FROM business_types WHERE lower(trim(name)) = lower(v_name);
+IF v_id IS NULL THEN
+            INSERT INTO business_types (name) VALUES (v_name) RETURNING id INTO v_id;
+END IF;
+        v_ids := v_ids || v_id;
+END LOOP;
+
+    IF array_length(v_ids, 1) IS NULL THEN
+        RAISE EXCEPTION 'Choose at least one business type.';
+END IF;
+
+    -- refuse to drop a type that still has stock on the shelf
+SELECT string_agg(DISTINCT bt.name, ', ') INTO v_blocked
+FROM branch_business_types bbt
+         JOIN business_types bt ON bt.id = bbt.business_type_id
+WHERE bbt.branch_id = p_branch_id
+  AND bbt.business_type_id <> ALL (v_ids)
+  AND EXISTS (SELECT 1 FROM inventory inv
+                                JOIN items i ON i.id = inv.item_id
+              WHERE inv.branch_id = p_branch_id
+                AND i.business_type_id = bbt.business_type_id
+                AND inv.quantity_available > 0);
+IF v_blocked IS NOT NULL THEN
+        RAISE EXCEPTION 'Can''t remove % from this branch: it still has stock of that type. Sell or adjust the stock first.', v_blocked;
+END IF;
+
+DELETE FROM branch_business_types
+WHERE branch_id = p_branch_id AND business_type_id <> ALL (v_ids);
+
+INSERT INTO branch_business_types (branch_id, business_type_id)
+SELECT p_branch_id, unnest(v_ids)
+    ON CONFLICT DO NOTHING;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION admin_set_branch_business_types(uuid, text[]) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION admin_set_branch_business_types(uuid, text[]) TO authenticated;
+REVOKE ALL ON FUNCTION branch_runs_business_type(uuid, uuid) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION branch_runs_business_type(uuid, uuid) TO authenticated;
+
+-- 8. Readable view for the branch screen ---------------------------------------
+CREATE OR REPLACE VIEW v_branch_business_types WITH (security_invoker = true) AS
+SELECT b.id AS branch_id, b.name AS branch_name,
+       COALESCE(array_agg(bt.name ORDER BY bt.name) FILTER (WHERE bt.id IS NOT NULL), '{}') AS business_types
+FROM branches b
+         LEFT JOIN branch_business_types bbt ON bbt.branch_id = b.id
+         LEFT JOIN business_types bt ON bt.id = bbt.business_type_id
+GROUP BY b.id, b.name;
+
+-- ============================================================================
+-- CATALOG ACCESS FOR EMPLOYEES
+-- Employees (cashiers) can request access to add new products to the catalog.
+-- Access is granted by an admin with an optional duration, just like stock access.
+-- When adding a product, it must belong to one of the business types their branch runs.
+-- The catalog item is then visible to all branches running that business type.
+-- ============================================================================
+
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'catalog_access_status') THEN
+        CREATE TYPE catalog_access_status AS ENUM ('pending', 'approved', 'denied', 'revoked', 'expired');
+    END IF;
+END
+$$;
+
+CREATE TABLE IF NOT EXISTS catalog_access_grants (
+    id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id       uuid NOT NULL REFERENCES users(id),
+    branch_id     uuid NOT NULL REFERENCES branches(id),
+    reason        text,
+    status        catalog_access_status NOT NULL DEFAULT 'pending',
+    requested_at  timestamptz NOT NULL DEFAULT now(),
+    decided_by    uuid REFERENCES users(id),
+    decided_at    timestamptz,
+    expires_at    timestamptz,                -- NULL = until the admin removes it
+    revoked_by    uuid REFERENCES users(id),
+    revoked_at    timestamptz
+);
+
+-- One open request or grant per person
+CREATE UNIQUE INDEX IF NOT EXISTS one_open_catalog_access_per_user
+    ON catalog_access_grants(user_id) WHERE status IN ('pending', 'approved');
+
+ALTER TABLE catalog_access_grants ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "View catalog access: admin all, user own" ON catalog_access_grants;
+CREATE POLICY "View catalog access: admin all, user own"
+    ON catalog_access_grants FOR SELECT
+    USING (is_admin() OR user_id = auth.uid());
+
+-- Helper: has_catalog_access()
+CREATE OR REPLACE FUNCTION has_catalog_access() RETURNS boolean
+LANGUAGE sql SECURITY DEFINER STABLE SET search_path = public AS $$
+SELECT COALESCE((
+    SELECT u.is_active AND (
+        u.role IN ('admin', 'manager')
+        OR EXISTS (
+            SELECT 1 FROM catalog_access_grants g
+            WHERE g.user_id = u.id AND g.status = 'approved'
+              AND (g.expires_at IS NULL OR g.expires_at > now())
+        )
+    )
+    FROM users u WHERE u.id = auth.uid()
+), false);
+$$;
+
+-- 1. Employee asks for catalog access
+CREATE OR REPLACE FUNCTION request_catalog_access(p_reason text DEFAULT NULL) RETURNS uuid
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+DECLARE v_uid uuid := auth.uid(); v_role user_role; v_branch uuid; v_id uuid;
+BEGIN
+    SELECT role, branch_id INTO v_role, v_branch FROM users WHERE id = v_uid AND is_active;
+    IF v_role IS NULL THEN RAISE EXCEPTION 'Your account is not active.'; END IF;
+    IF v_role = 'admin' THEN
+        RAISE EXCEPTION 'Admins already have full catalog access.';
+    END IF;
+
+    UPDATE catalog_access_grants SET status = 'expired'
+    WHERE user_id = v_uid AND status = 'approved'
+      AND expires_at IS NOT NULL AND expires_at <= now();
+
+    IF EXISTS (SELECT 1 FROM catalog_access_grants WHERE user_id = v_uid AND status = 'pending') THEN
+        RAISE EXCEPTION 'You already have a catalog request waiting for the admin.';
+    END IF;
+    IF EXISTS (SELECT 1 FROM catalog_access_grants WHERE user_id = v_uid AND status = 'approved') THEN
+        RAISE EXCEPTION 'You already have catalog access.';
+    END IF;
+
+    INSERT INTO catalog_access_grants (user_id, branch_id, reason)
+    VALUES (v_uid, v_branch, NULLIF(trim(p_reason), ''))
+    RETURNING id INTO v_id;
+    RETURN v_id;
+END;
+$$;
+
+-- 2. Admin decides (approves with optional hours, or denies)
+CREATE OR REPLACE FUNCTION decide_catalog_access(
+    p_request_id uuid, p_approve boolean, p_hours int DEFAULT NULL) RETURNS void
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+BEGIN
+    IF NOT is_admin() THEN RAISE EXCEPTION 'Only admins can approve catalog access.'; END IF;
+    IF p_hours IS NOT NULL AND p_hours <= 0 THEN
+        RAISE EXCEPTION 'The time limit must be above zero hours.';
+    END IF;
+
+    UPDATE catalog_access_grants
+    SET status = CASE WHEN p_approve THEN 'approved'::catalog_access_status
+                      ELSE 'denied'::catalog_access_status END,
+        decided_by = auth.uid(),
+        decided_at = now(),
+        expires_at = CASE WHEN p_approve AND p_hours IS NOT NULL
+                          THEN now() + make_interval(hours => p_hours) END
+    WHERE id = p_request_id AND status = 'pending';
+    IF NOT FOUND THEN RAISE EXCEPTION 'This request is no longer waiting.'; END IF;
+END;
+$$;
+
+-- 3. Admin revokes or employee ends access
+CREATE OR REPLACE FUNCTION revoke_catalog_access(p_request_id uuid) RETURNS void
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+BEGIN
+    UPDATE catalog_access_grants
+    SET status = 'revoked', revoked_by = auth.uid(), revoked_at = now()
+    WHERE id = p_request_id AND status = 'approved'
+      AND (is_admin() OR user_id = auth.uid());
+    IF NOT FOUND THEN RAISE EXCEPTION 'There is no active catalog access to end.'; END IF;
+END;
+$$;
+
+-- 4. Add catalog item function
+CREATE OR REPLACE FUNCTION add_catalog_item(
+    p_name                  text,
+    p_business_type_id      uuid,
+    p_category              text DEFAULT NULL,
+    p_unit                  text DEFAULT 'unit',
+    p_reorder_level         numeric DEFAULT 10,
+    p_requires_prescription boolean DEFAULT false
+) RETURNS uuid
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+DECLARE
+    v_uid uuid := auth.uid();
+    v_role user_role;
+    v_branch uuid;
+    v_item_id uuid;
+BEGIN
+    IF v_uid IS NULL THEN RAISE EXCEPTION 'Not signed in.'; END IF;
+    SELECT role, branch_id INTO v_role, v_branch FROM users WHERE id = v_uid AND is_active;
+    IF v_role IS NULL THEN RAISE EXCEPTION 'User account is not active.'; END IF;
+
+    IF v_role <> 'admin' THEN
+        IF NOT has_catalog_access() THEN
+            RAISE EXCEPTION 'Active catalog access is required to add new items.';
+        END IF;
+        IF NOT branch_runs_business_type(v_branch, p_business_type_id) THEN
+            RAISE EXCEPTION 'Your branch does not run this business type. You can only add items for business types your branch operates.';
+        END IF;
+    END IF;
+
+    IF trim(COALESCE(p_name, '')) = '' THEN
+        RAISE EXCEPTION 'Item name is required.';
+    END IF;
+    IF p_business_type_id IS NULL THEN
+        RAISE EXCEPTION 'Business type is required.';
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM business_types WHERE id = p_business_type_id AND is_active) THEN
+        RAISE EXCEPTION 'Business type not found or inactive.';
+    END IF;
+
+    INSERT INTO items (
+        name,
+        business_type_id,
+        category,
+        unit,
+        reorder_level,
+        requires_prescription
+    ) VALUES (
+        trim(p_name),
+        p_business_type_id,
+        NULLIF(trim(p_category), ''),
+        COALESCE(NULLIF(trim(p_unit), ''), 'unit'),
+        COALESCE(p_reorder_level, 10),
+        COALESCE(p_requires_prescription, false)
+    ) RETURNING id INTO v_item_id;
+
+    RETURN v_item_id;
+END;
+$$;
+
+-- 5. Readable view for admin and cashier status
+CREATE OR REPLACE VIEW v_catalog_access_requests WITH (security_invoker = true) AS
+SELECT g.id, g.user_id, u.full_name, g.branch_id, b.name AS branch_name,
+       g.reason, g.requested_at, g.decided_at, g.expires_at, g.revoked_at,
+       d.full_name AS decided_by_name, r.full_name AS revoked_by_name,
+       g.revoked_by AS revoked_by_id,
+       CASE WHEN g.status = 'approved' AND g.expires_at IS NOT NULL AND g.expires_at <= now()
+            THEN 'expired' ELSE g.status::text END AS effective_status
+FROM catalog_access_grants g
+JOIN users u ON u.id = g.user_id
+JOIN branches b ON b.id = g.branch_id
+LEFT JOIN users d ON d.id = g.decided_by
+LEFT JOIN users r ON r.id = g.revoked_by
+ORDER BY g.requested_at DESC;
+
+-- Permissions
+REVOKE ALL ON FUNCTION request_catalog_access(text)             FROM PUBLIC, anon;
+REVOKE ALL ON FUNCTION decide_catalog_access(uuid, boolean, int) FROM PUBLIC, anon;
+REVOKE ALL ON FUNCTION revoke_catalog_access(uuid)              FROM PUBLIC, anon;
+REVOKE ALL ON FUNCTION has_catalog_access()                     FROM PUBLIC, anon;
+REVOKE ALL ON FUNCTION add_catalog_item(text, uuid, text, text, numeric, boolean) FROM PUBLIC, anon;
+
+GRANT EXECUTE ON FUNCTION request_catalog_access(text)             TO authenticated;
+GRANT EXECUTE ON FUNCTION decide_catalog_access(uuid, boolean, int) TO authenticated;
+GRANT EXECUTE ON FUNCTION revoke_catalog_access(uuid)              TO authenticated;
+GRANT EXECUTE ON FUNCTION has_catalog_access()                     TO authenticated;
+GRANT EXECUTE ON FUNCTION add_catalog_item(text, uuid, text, text, numeric, boolean) TO authenticated;
+
+select proname, pg_get_function_arguments(oid)
+from pg_proc
+where proname in ('request_catalog_access', 'has_catalog_access',
+                  'decide_catalog_access', 'revoke_catalog_access',
+                  'add_catalog_item');

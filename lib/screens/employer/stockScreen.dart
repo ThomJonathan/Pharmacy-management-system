@@ -33,6 +33,12 @@ class _StockScreenState extends State<StockScreen> {
   bool _canReceive = false;
   OwnAccess _access = const OwnAccess(state: OwnAccessState.none);
 
+  // Catalog: same request -> approve -> add model as stock access.
+  // A new product is visible to every branch running its business type.
+  bool _canAddCatalog = false;
+  OwnAccess _catalogAccess = const OwnAccess(state: OwnAccessState.none);
+  List<BusinessTypeOption> _branchTypes = [];
+
   bool _loadedOnce = false;
   bool _wasSelected = false;
 
@@ -82,12 +88,18 @@ class _StockScreenState extends State<StockScreen> {
         _repo.fetchStock(branchId: bid, query: _query),
         _repo.hasAccess(),
         _repo.myStatus(),
+        _repo.hasCatalogAccess(),
+        _repo.myCatalogStatus(),
+        _repo.fetchBranchBusinessTypes(bid),
       ]);
       if (!mounted) return;
       setState(() {
         _rows = results[0] as List<BranchStockRow>;
         _canReceive = results[1] as bool;
         _access = results[2] as OwnAccess;
+        _canAddCatalog = results[3] as bool;
+        _catalogAccess = results[4] as OwnAccess;
+        _branchTypes = results[5] as List<BusinessTypeOption>;
         _loading = false;
         _error = null;
         _loadedOnce = true;
@@ -158,6 +170,71 @@ class _StockScreenState extends State<StockScreen> {
       if (mounted) empToast(context, 'Access ended.');
     } on StockException catch (e) {
       if (mounted) empToast(context, e.message, error: true);
+    }
+  }
+
+  Future<void> _requestCatalogAccess() async {
+    final reason = await _showStockSheet<String>(
+      context,
+      builder: (_) => _ReasonSheet(
+        title: 'Request catalog access',
+        subtitle: 'Specify why adding new products is needed.',
+        hint: 'e.g. New cosmetics line arrived, not in catalog yet',
+      ),
+    );
+    if (reason == null || reason.trim().isEmpty) return;
+    try {
+      await _repo.requestCatalogAccess(reason);
+      await _load(silent: true);
+      if (mounted) empToast(context, 'Request sent. The admin will decide.');
+    } on StockException catch (e) {
+      if (mounted) empToast(context, e.message, error: true);
+    }
+  }
+
+  Future<void> _endCatalogAccess() async {
+    final id = _catalogAccess.requestId;
+    if (id == null) return;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: Colors.white,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+        title: Text('End your catalog access?', style: empSans(16, weight: FontWeight.w700, color: empInk)),
+        content: Text('You will no longer be able to add new products until granted again.', style: empSans(13, color: empMuted)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: Text('Keep it', style: empSans(13, color: empMuted)),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            style: empPrimaryButton(height: 36),
+            child: const Text('I’m done'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    try {
+      await _repo.endOwnCatalogAccess(id);
+      await _load(silent: true);
+      if (mounted) empToast(context, 'Catalog access ended.');
+    } on StockException catch (e) {
+      if (mounted) empToast(context, e.message, error: true);
+    }
+  }
+
+  Future<void> _addCatalogItem() async {
+    final bid = _branchId;
+    if (bid == null) return;
+    final added = await _showStockSheet<String>(
+      context,
+      builder: (_) => _AddCatalogItemSheet(repo: _repo, branchTypes: _branchTypes),
+    );
+    if (added != null && mounted) {
+      await _load(silent: true);
+      if (mounted) empToast(context, added);
     }
   }
 
@@ -266,8 +343,37 @@ class _StockScreenState extends State<StockScreen> {
               ),
           ],
         ),
+        const SizedBox(height: 10),
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                _branchTypes.isEmpty
+                    ? 'Catalog: this branch has no business type set — ask the admin.'
+                    : 'Catalog: ${_branchTypes.map((t) => t.name).join(' · ')}',
+                style: empSans(12, color: empMuted),
+              ),
+            ),
+            const SizedBox(width: 10),
+            if (_canAddCatalog)
+              OutlinedButton.icon(
+                onPressed: _addCatalogItem,
+                style: empOutlineButton(height: 38),
+                icon: const Icon(Icons.playlist_add_outlined, size: 16),
+                label: const Text('Add product'),
+              )
+            else if (_catalogAccess.state != OwnAccessState.pending)
+              OutlinedButton.icon(
+                onPressed: _requestCatalogAccess,
+                style: empOutlineButton(height: 38),
+                icon: const Icon(Icons.library_add_outlined, size: 16),
+                label: const Text('Request catalog access'),
+              ),
+          ],
+        ),
         const SizedBox(height: 16),
         _accessBanner(),
+        _catalogBanner(),
         const SizedBox(height: 16),
         TextField(
           controller: _searchCtrl,
@@ -276,7 +382,7 @@ class _StockScreenState extends State<StockScreen> {
             _load(silent: true);
           },
           style: empSans(14, color: empInk),
-          decoration: empField('Search stock by drug or item name…').copyWith(
+          decoration: empField('Search stock by product or item name…').copyWith(
             prefixIcon: const Icon(Icons.search, size: 18, color: empMuted),
           ),
         ),
@@ -361,6 +467,68 @@ class _StockScreenState extends State<StockScreen> {
             Expanded(
               child: Text(
                 'Access request sent. Waiting for admin approval.',
+                style: empSans(12.5, color: empMuted),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+    return const SizedBox.shrink();
+  }
+
+  Widget _catalogBanner() {
+    if (_canAddCatalog && _catalogAccess.state == OwnAccessState.active) {
+      final until = _catalogAccess.expiresAt == null
+          ? 'until removed by admin'
+          : 'until ${_fmtTime(_catalogAccess.expiresAt!)}';
+      return Container(
+        margin: const EdgeInsets.only(bottom: 12),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          border: Border.all(color: empBorder),
+          borderRadius: BorderRadius.circular(4),
+        ),
+        child: Row(
+          children: [
+            EmpStatusPill.active('Can add products'),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                'New products you add join the shared catalog ($until).',
+                style: empSans(12.5, color: empMuted),
+              ),
+            ),
+            TextButton(
+              onPressed: _endCatalogAccess,
+              style: TextButton.styleFrom(
+                foregroundColor: empInk,
+                minimumSize: const Size(0, 32),
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+              ),
+              child: Text('Done adding', style: empSans(12, weight: FontWeight.w600, color: empPrimary)),
+            ),
+          ],
+        ),
+      );
+    }
+    if (_catalogAccess.state == OwnAccessState.pending) {
+      return Container(
+        margin: const EdgeInsets.only(bottom: 12),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          border: Border.all(color: empBorder),
+          borderRadius: BorderRadius.circular(4),
+        ),
+        child: Row(
+          children: [
+            EmpStatusPill.warning('Catalog pending'),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                'Catalog request sent. Waiting for admin approval.',
                 style: empSans(12.5, color: empMuted),
               ),
             ),
@@ -487,6 +655,14 @@ Future<T?> _showStockSheet<T>(BuildContext context, {required WidgetBuilder buil
 }
 
 class _ReasonSheet extends StatefulWidget {
+  final String title;
+  final String subtitle;
+  final String hint;
+  const _ReasonSheet({
+    this.title = 'Request stock access',
+    this.subtitle = 'Specify why delivery access is needed.',
+    this.hint = 'e.g. Supplier delivery arrived at branch',
+  });
   @override
   State<_ReasonSheet> createState() => _ReasonSheetState();
 }
@@ -503,8 +679,8 @@ class _ReasonSheetState extends State<_ReasonSheet> {
   @override
   Widget build(BuildContext context) {
     return EmpSheetFrame(
-      title: 'Request stock access',
-      subtitle: 'Specify why delivery access is needed.',
+      title: widget.title,
+      subtitle: widget.subtitle,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -513,7 +689,7 @@ class _ReasonSheetState extends State<_ReasonSheet> {
             minLines: 2,
             maxLines: 3,
             style: empSans(14, color: empInk),
-            decoration: empField('Reason', hint: 'e.g. Supplier delivery arrived at branch'),
+            decoration: empField('Reason', hint: widget.hint),
           ),
           const SizedBox(height: 16),
           FilledButton(
@@ -877,7 +1053,7 @@ class _ItemPickerSheetState extends State<_ItemPickerSheet> {
             controller: _searchCtrl,
             onChanged: _search,
             style: empSans(14, color: empInk),
-            decoration: empField('Type a drug name…').copyWith(
+            decoration: empField('Type a product name…').copyWith(
               prefixIcon: const Icon(Icons.search, size: 18, color: empMuted),
             ),
           ),
@@ -915,6 +1091,246 @@ class _ItemPickerSheetState extends State<_ItemPickerSheet> {
               child: Text('No items match “${_searchCtrl.text.trim()}”.',
                   textAlign: TextAlign.center, style: empSans(12.5, color: empMuted)),
             ),
+        ],
+      ),
+    );
+  }
+}
+
+// ============================================================================
+// ADD CATALOG ITEM — employee creates a product in the shared catalog.
+//   Business type is limited to what this branch runs; the new product is
+//   then visible to every branch running that type. Writes go through
+//   add_catalog_item(), which enforces catalog access + branch type.
+// ============================================================================
+
+class _AddCatalogItemSheet extends StatefulWidget {
+  final CashierStockRepository repo;
+  final List<BusinessTypeOption> branchTypes;
+  const _AddCatalogItemSheet({required this.repo, required this.branchTypes});
+
+  @override
+  State<_AddCatalogItemSheet> createState() => _AddCatalogItemSheetState();
+}
+
+class _AddCatalogItemSheetState extends State<_AddCatalogItemSheet> {
+  final _nameCtrl = TextEditingController();
+  final _categoryCtrl = TextEditingController();
+  final _unitCtrl = TextEditingController(text: 'unit');
+  final _reorderCtrl = TextEditingController(text: '10');
+  bool _rx = false;
+  String? _typeId;
+  bool _saving = false;
+  String? _formError;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.branchTypes.isNotEmpty) _typeId = widget.branchTypes.first.id;
+  }
+
+  @override
+  void dispose() {
+    _nameCtrl.dispose();
+    _categoryCtrl.dispose();
+    _unitCtrl.dispose();
+    _reorderCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _submit() async {
+    if (_nameCtrl.text.trim().isEmpty) {
+      setState(() => _formError = 'Product name is required.');
+      return;
+    }
+    if (_typeId == null || _typeId!.isEmpty) {
+      setState(() => _formError = 'Pick the business type for this product.');
+      return;
+    }
+    final reorder = double.tryParse(_reorderCtrl.text.trim());
+    if (reorder == null || reorder < 0) {
+      setState(() => _formError = 'Reorder level must be zero or above.');
+      return;
+    }
+    // Duplicate guard: same name (case-insensitive) already catalogued.
+    // Same unit means it is the same item — blocked, no override.
+    // Different unit may legitimately be a separate product (bottle vs
+    // tablets), so that case only warns and lets the user confirm.
+    // Advisory only: a failed lookup must not block the save.
+    try {
+      final matches = await widget.repo.findItemsByName(_nameCtrl.text);
+      if (matches.isNotEmpty && mounted) {
+        final enteredUnit = _unitCtrl.text.trim().isEmpty
+            ? 'unit'
+            : _unitCtrl.text.trim();
+        final sameUnit = matches
+            .where(
+              (m) =>
+                  m.unit.trim().toLowerCase() == enteredUnit.toLowerCase(),
+            )
+            .toList();
+        if (sameUnit.isNotEmpty) {
+          final listed = sameUnit
+              .take(3)
+              .map((m) =>
+                  '• ${m.name} (${m.unit}${m.businessType.isNotEmpty ? ' · ${m.businessType}' : ''})')
+              .join('\n');
+          setState(() => _formError =
+              '“${_nameCtrl.text.trim()}” is already in the catalog with the same unit ($enteredUnit):\n$listed\nThat is the same item — pick it from the catalog instead of adding it again.');
+          return;
+        }
+        final listed = matches
+            .take(5)
+            .map((m) =>
+                '• ${m.name} (${m.unit}${m.businessType.isNotEmpty ? ' · ${m.businessType}' : ''})')
+            .join('\n');
+        final proceed = await showDialog<bool>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            backgroundColor: Colors.white,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+            title: Text(
+              'Same name, different unit',
+              style: empSans(16, weight: FontWeight.w700, color: empInk),
+            ),
+            content: Text(
+              '“${_nameCtrl.text.trim()}” is already in the catalog with a different unit:\n$listed\n\nYou entered unit “$enteredUnit”. The same product sold in a different unit counts as a separate product — continue only if that is what you mean.',
+              style: empSans(13, color: empMuted),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(false),
+                child: Text('Keep editing', style: empSans(13, color: empMuted)),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.of(ctx).pop(true),
+                style: empPrimaryButton(height: 36),
+                child: const Text('Add anyway'),
+              ),
+            ],
+          ),
+        );
+        if (proceed != true) return;
+      }
+    } catch (_) {
+      // Fall through to the save below.
+    }
+    setState(() {
+      _saving = true;
+      _formError = null;
+    });
+    try {
+      final typeName = widget.branchTypes
+          .where((t) => t.id == _typeId)
+          .map((t) => t.name)
+          .join();
+      await widget.repo.addCatalogItem(
+        name: _nameCtrl.text,
+        businessTypeId: _typeId!,
+        category: _categoryCtrl.text,
+        unit: _unitCtrl.text,
+        reorderLevel: reorder,
+        requiresPrescription: _rx,
+      );
+      if (mounted) {
+        Navigator.of(context).pop(
+          '“${_nameCtrl.text.trim()}” added to the $typeName catalog — visible to all $typeName branches.',
+        );
+      }
+    } on StockException catch (e) {
+      if (mounted) {
+        setState(() {
+          _saving = false;
+          _formError = e.message;
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return EmpSheetFrame(
+      title: 'Add product to catalog',
+      subtitle: 'Only for business types your branch runs. Shared with all branches of that type.',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          TextField(
+            controller: _nameCtrl,
+            textCapitalization: TextCapitalization.words,
+            style: empSans(14, color: empInk),
+            decoration: empField('Product name', hint: 'e.g. Amoxicillin 250mg, Lipstick Red'),
+          ),
+          const SizedBox(height: 10),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            decoration: BoxDecoration(
+              border: Border.all(color: empBorder),
+              borderRadius: BorderRadius.circular(4),
+              color: Colors.white,
+            ),
+            child: DropdownButtonHideUnderline(
+              child: DropdownButton<String>(
+                value: _typeId,
+                isExpanded: true,
+                hint: Text('Business type', style: empSans(13.5, color: empMuted)),
+                style: empSans(14, color: empInk),
+                items: [
+                  for (final t in widget.branchTypes)
+                    DropdownMenuItem(value: t.id, child: Text(t.name)),
+                ],
+                onChanged: (v) => setState(() => _typeId = v),
+              ),
+            ),
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _categoryCtrl,
+                  textCapitalization: TextCapitalization.words,
+                  style: empSans(14, color: empInk),
+                  decoration: empField('Category (optional)'),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: TextField(
+                  controller: _unitCtrl,
+                  style: empSans(14, color: empInk),
+                  decoration: empField('Unit', hint: 'tablet, bottle…'),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          TextField(
+            controller: _reorderCtrl,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            style: empSans(14, color: empInk),
+            decoration: empField('Reorder level'),
+          ),
+          CheckboxListTile(
+            value: _rx,
+            onChanged: (v) => setState(() => _rx = v ?? false),
+            title: Text('Requires prescription', style: empSans(13.5, color: empInk)),
+            contentPadding: EdgeInsets.zero,
+            controlAffinity: ListTileControlAffinity.leading,
+          ),
+          if (_formError != null) ...[
+            const SizedBox(height: 6),
+            Text(_formError!, style: empSans(12.5, weight: FontWeight.w600, color: empDanger)),
+          ],
+          const SizedBox(height: 12),
+          FilledButton(
+            onPressed: _saving ? null : _submit,
+            style: empPrimaryButton(),
+            child: _saving
+                ? const SizedBox(
+                    width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                : const Text('Add to catalog'),
+          ),
         ],
       ),
     );

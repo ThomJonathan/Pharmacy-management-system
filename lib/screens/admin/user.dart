@@ -4,6 +4,8 @@ import '../../widgets/adminShell.dart';
 import 'adminhomeRepo.dart';
 import 'adminui.dart';
 import 'assignUser.dart';
+import 'catalogAccess.dart';
+import 'catalogAccessRepo.dart';
 import 'stockAccess.dart';
 import 'stockAccessRepo.dart';
 
@@ -39,7 +41,7 @@ class _UsersScreenState extends State<UsersScreen> {
   String? _error;
   _Filter _filter = _Filter.all;
   String _query = '';
-  int _section = 0; // 0 = staff list, 1 = stock access
+  int _section = 0; // 0 = staff list, 1 = stock access, 2 = catalog access
   int _accessTab = 0;
   int _accessNonce = 0;
   bool _wasSelected = false;
@@ -48,18 +50,29 @@ class _UsersScreenState extends State<UsersScreen> {
   void didChangeDependencies() {
     super.didChangeDependencies();
     // Refresh when the admin returns here; honour Home-card deep-links
-    // into the Stock access section (rebuilt via nonce so it jumps tabs).
+    // into the Stock/Catalog access sections (rebuilt via nonce so they
+    // jump tabs).
     final selected = AdminShellScope.of(context)?.selectedIndex == 3;
     if (selected && !_wasSelected) {
       _load(silent: true);
-      final target = stockAccessInitialTab.value;
-      if (target >= 0) {
+      final stockTarget = stockAccessInitialTab.value;
+      if (stockTarget >= 0) {
         stockAccessInitialTab.value = -1;
         setState(() {
           _section = 1;
-          _accessTab = target.clamp(0, 2);
+          _accessTab = stockTarget.clamp(0, 2);
           _accessNonce++;
         });
+      } else {
+        final catalogTarget = catalogAccessInitialTab.value;
+        if (catalogTarget >= 0) {
+          catalogAccessInitialTab.value = -1;
+          setState(() {
+            _section = 2;
+            _accessTab = catalogTarget.clamp(0, 2);
+            _accessNonce++;
+          });
+        }
       }
     }
     _wasSelected = selected;
@@ -229,24 +242,35 @@ class _UsersScreenState extends State<UsersScreen> {
                           const SizedBox(height: 16),
                           ValueListenableBuilder<int>(
                             valueListenable: stockAccessPendingCount,
-                            builder: (_, accessPending, _) => SingleChildScrollView(
-                              scrollDirection: Axis.horizontal,
-                              child: Row(
-                                children: [
-                                  FilterPill(
-                                    label: 'Staff',
-                                    selected: _section == 0,
-                                    onTap: () => setState(() => _section = 0),
-                                  ),
-                                  const SizedBox(width: 8),
-                                  FilterPill(
-                                    label: accessPending > 0
-                                        ? 'Stock access ($accessPending)'
-                                        : 'Stock access',
-                                    selected: _section == 1,
-                                    onTap: () => setState(() => _section = 1),
-                                  ),
-                                ],
+                            builder: (_, accessPending, _) => ValueListenableBuilder<int>(
+                              valueListenable: catalogAccessPendingCount,
+                              builder: (_, catalogPending, _) => SingleChildScrollView(
+                                scrollDirection: Axis.horizontal,
+                                child: Row(
+                                  children: [
+                                    FilterPill(
+                                      label: 'Staff',
+                                      selected: _section == 0,
+                                      onTap: () => setState(() => _section = 0),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    FilterPill(
+                                      label: accessPending > 0
+                                          ? 'Stock access ($accessPending)'
+                                          : 'Stock access',
+                                      selected: _section == 1,
+                                      onTap: () => setState(() => _section = 1),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    FilterPill(
+                                      label: catalogPending > 0
+                                          ? 'Catalog access ($catalogPending)'
+                                          : 'Catalog access',
+                                      selected: _section == 2,
+                                      onTap: () => setState(() => _section = 2),
+                                    ),
+                                  ],
+                                ),
                               ),
                             ),
                           ),
@@ -284,8 +308,13 @@ class _UsersScreenState extends State<UsersScreen> {
                           ),
                           const SizedBox(height: 16),
                           _body(wide),
-                        ] else
+                        ] else if (_section == 1)
                           StockAccessSection(
+                            key: ValueKey(_accessNonce),
+                            initialTab: _accessTab,
+                          )
+                        else
+                          CatalogAccessSection(
                             key: ValueKey(_accessNonce),
                             initialTab: _accessTab,
                           ),

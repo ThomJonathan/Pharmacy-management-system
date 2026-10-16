@@ -81,6 +81,7 @@ class BranchInfo {
   final String? phone;
   final bool isActive;
   final int staffCount;
+  final List<String> businessTypes;
 
   const BranchInfo({
     required this.id,
@@ -89,6 +90,7 @@ class BranchInfo {
     this.phone,
     required this.isActive,
     required this.staffCount,
+    this.businessTypes = const [],
   });
 }
 
@@ -159,6 +161,15 @@ class AdminManagementRepository {
   // BRANCHES
   // --------------------------------------------------------------------------
 
+  Future<List<String>> fetchBusinessTypes() => _guard(() async {
+    final rows = (await _client
+        .from('business_types')
+        .select('name')
+        .eq('is_active', true)
+        .order('name')) as List;
+    return rows.map((r) => (r['name'] as String).trim()).toList();
+  });
+
   Future<List<BranchInfo>> fetchBranches() => _guard(() async {
     final rows = (await _client
         .from('branches')
@@ -177,6 +188,20 @@ class AdminManagementRepository {
       counts[id] = (counts[id] ?? 0) + 1;
     }
 
+    final typeMap = <String, List<String>>{};
+    try {
+      final typeRows = (await _client
+          .from('v_branch_business_types')
+          .select('branch_id, business_types')) as List;
+      for (final r in typeRows) {
+        final bid = r['branch_id'] as String;
+        final rawTypes = r['business_types'];
+        if (rawTypes is List) {
+          typeMap[bid] = rawTypes.map((e) => e.toString()).toList();
+        }
+      }
+    } catch (_) {}
+
     return rows
         .map((r) => BranchInfo(
       id: r['id'] as String,
@@ -185,21 +210,43 @@ class AdminManagementRepository {
       phone: r['phone'] as String?,
       isActive: (r['is_active'] as bool?) ?? true,
       staffCount: counts[r['id'] as String] ?? 0,
+      businessTypes: typeMap[r['id'] as String] ?? const ['Pharmacy'],
     ))
         .toList();
   });
 
-  Future<void> createBranch({required String name, String? location, String? phone}) =>
+  Future<void> createBranch({
+    required String name,
+    String? location,
+    String? phone,
+    List<String> businessTypes = const ['Pharmacy'],
+  }) =>
       _guard(() async {
-        await _client.from('branches').insert({
-          'name': name.trim(),
-          'location': _clean(location),
-          'phone': _clean(phone),
-        });
+        final res = await _client
+            .from('branches')
+            .insert({
+              'name': name.trim(),
+              'location': _clean(location),
+              'phone': _clean(phone),
+            })
+            .select('id')
+            .single();
+        final branchId = res['id'] as String;
+        if (businessTypes.isNotEmpty) {
+          await _client.rpc('admin_set_branch_business_types', params: {
+            'p_branch_id': branchId,
+            'p_type_names': businessTypes,
+          });
+        }
       });
 
-  Future<void> updateBranch(String id,
-      {required String name, String? location, String? phone}) =>
+  Future<void> updateBranch(
+    String id, {
+    required String name,
+    String? location,
+    String? phone,
+    List<String>? businessTypes,
+  }) =>
       _guard(() async {
         final res = (await _client
             .from('branches')
@@ -212,6 +259,12 @@ class AdminManagementRepository {
             .select('id')) as List;
         if (res.isEmpty) {
           throw const ManagementException('Branch was not updated. Check admin permissions.');
+        }
+        if (businessTypes != null && businessTypes.isNotEmpty) {
+          await _client.rpc('admin_set_branch_business_types', params: {
+            'p_branch_id': id,
+            'p_type_names': businessTypes,
+          });
         }
       });
 

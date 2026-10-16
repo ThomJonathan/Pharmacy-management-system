@@ -129,82 +129,72 @@ class AdminHomeRepository {
   }
 
   /// [branchId] null = all branches.
+  ///
+  /// All six queries are independent, so they run in parallel — total wait
+  /// is the slowest query, not the sum. (Previously they awaited one after
+  /// another, which is why the homepage felt slow: 7 sequential round-trips.)
+  /// The credit numbers come from the same sales rows (no second query),
+  /// and the attention views are capped — the homepage only shows a count
+  /// plus the top few inline.
   Future<AdminHomeData> fetchAdminHomeData({String? branchId}) async {
     final range = _todayRange();
-    final branches = await fetchBranches();
+    final todayStr = _todayDateStr();
+
+    final results = await Future.wait([
+      fetchBranches(),
+      _fetchSalesRows(range.start, range.end, branchId),
+      _fetchExpensesToday(todayStr, branchId),
+      _fetchRecentExpenses(branchId),
+      _fetchLowStockRows(branchId),
+      _fetchExpiringRows(branchId),
+    ]);
+
+    final branches = results[0] as List<Branch>;
+    final salesRows = results[1] as List;
+    final expTodayRows = results[2] as List;
+    final recentRows = results[3] as List;
+    final lowStockRows = results[4] as List;
+    final expiringRows = results[5] as List;
+
     final branchNames = {for (final b in branches) b.id: b.name};
 
-    // ---- Sales today (every payment method) -------------------------------
-    var salesQuery = _client
-        .from('sales')
-        .select('branch_id, total_amount')
-        .gte('sale_date', range.start.toIso8601String())
-        .lt('sale_date', range.end.toIso8601String());
-    if (branchId != null) salesQuery = salesQuery.eq('branch_id', branchId);
-    final salesRows = await salesQuery as List;
-
+    // ---- Sales today (every payment method) + credit split ----------------
     double salesToday = 0;
+    double creditToday = 0;
+    int creditCount = 0;
     final Map<String, double> salesByBranch = {};
     for (final row in salesRows) {
       final amount = (row['total_amount'] as num).toDouble();
       salesToday += amount;
       final bId = row['branch_id'] as String;
       salesByBranch[bId] = (salesByBranch[bId] ?? 0) + amount;
+      if (row['payment_method'] == 'credit') {
+        creditToday += amount;
+        creditCount++;
+      }
     }
 
     final branchesInScope =
-    branchId == null ? branches : branches.where((b) => b.id == branchId);
+        branchId == null ? branches : branches.where((b) => b.id == branchId);
     final branchSales = branchesInScope
         .map((b) => BranchSalesSummary(
-      branchId: b.id,
-      branchName: b.name,
-      salesToday: salesByBranch[b.id] ?? 0,
-    ))
+              branchId: b.id,
+              branchName: b.name,
+              salesToday: salesByBranch[b.id] ?? 0,
+            ))
         .toList();
 
-    // ---- Credit given today (payment_method = 'credit') --------------------
-    var creditQuery = _client
-        .from('sales')
-        .select('total_amount')
-        .eq('payment_method', 'credit')
-        .gte('sale_date', range.start.toIso8601String())
-        .lt('sale_date', range.end.toIso8601String());
-    if (branchId != null) creditQuery = creditQuery.eq('branch_id', branchId);
-    final creditRows = await creditQuery as List;
-
-    double creditToday = 0;
-    for (final row in creditRows) {
-      creditToday += (row['total_amount'] as num).toDouble();
-    }
-
     // ---- Expenses today ----------------------------------------------------
-    final todayStr = _todayDateStr();
-    var expTodayQuery = _client
-        .from('expenses')
-        .select('amount')
-        .eq('expense_date', todayStr);
-    if (branchId != null) expTodayQuery = expTodayQuery.eq('branch_id', branchId);
-    final expTodayRows = await expTodayQuery as List;
-
     double expensesToday = 0;
     for (final row in expTodayRows) {
       expensesToday += (row['amount'] as num).toDouble();
     }
 
     // ---- Recent expenses (respects the same branch filter) -----------------
-    dynamic recentBase = _client
-        .from('expenses')
-        .select('id, branch_id, category, amount, description, expense_date, created_at, branches(name)');
-    if (branchId != null) recentBase = recentBase.eq('branch_id', branchId);
-    final recentRows = await recentBase
-        .order('expense_date', ascending: false)
-        .order('created_at', ascending: false)
-        .limit(30) as List;
-
     final recentExpenses = recentRows.map((row) {
       final embedded = row['branches'];
       final embeddedName =
-      embedded is Map ? embedded['name'] as String? : null;
+          embedded is Map ? embedded['name'] as String? : null;
       final bId = row['branch_id'] as String;
       return ExpenseRecord(
         id: row['id'] as String,
@@ -217,20 +207,7 @@ class AdminHomeRepository {
       );
     }).toList();
 
-    // ---- Low stock — branch_name now comes straight from the view --------
-    var lowStockQuery = _client
-        .from('v_low_stock')
-        .select('branch_id, branch_name, item_name, reorder_level, quantity_on_hand');
-    if (branchId != null) lowStockQuery = lowStockQuery.eq('branch_id', branchId);
-    final lowStockRows = await lowStockQuery as List;
-
-    // ---- Expiring within 90 days — same, branch_name from the view -------
-    var expiringQuery = _client
-        .from('v_expiring_soon')
-        .select('branch_id, branch_name, item_name, expiry_date, days_to_expiry');
-    if (branchId != null) expiringQuery = expiringQuery.eq('branch_id', branchId);
-    final expiringRows = await expiringQuery as List;
-
+    // ---- Attention items (low stock first, then expiring) -------------------
     final attentionItems = <AttentionItem>[
       for (final row in lowStockRows)
         AttentionItem(
@@ -238,7 +215,7 @@ class AdminHomeRepository {
           itemName: row['item_name'] as String,
           branchName: row['branch_name'] as String? ?? 'Unknown branch',
           detail:
-          '${(row['quantity_on_hand'] as num).toStringAsFixed(0)} left · '
+              '${(row['quantity_on_hand'] as num).toStringAsFixed(0)} left · '
               'reorder at ${(row['reorder_level'] as num).toStringAsFixed(0)}',
         ),
       for (final row in expiringRows)
@@ -263,13 +240,56 @@ class AdminHomeRepository {
       salesToday: salesToday,
       salesTransactionsToday: salesRows.length,
       creditToday: creditToday,
-      creditSalesToday: creditRows.length,
+      creditSalesToday: creditCount,
       branchSales: branchSales,
       attentionItems: attentionItems,
       expensesToday: expensesToday,
       expensesCountToday: expTodayRows.length,
       recentExpenses: recentExpenses,
     );
+  }
+
+  Future<List> _fetchSalesRows(DateTime start, DateTime end, String? branchId) async {
+    var q = _client
+        .from('sales')
+        .select('branch_id, total_amount, payment_method')
+        .gte('sale_date', start.toIso8601String())
+        .lt('sale_date', end.toIso8601String());
+    if (branchId != null) q = q.eq('branch_id', branchId);
+    return await q as List;
+  }
+
+  Future<List> _fetchExpensesToday(String todayStr, String? branchId) async {
+    var q = _client.from('expenses').select('amount').eq('expense_date', todayStr);
+    if (branchId != null) q = q.eq('branch_id', branchId);
+    return await q as List;
+  }
+
+  Future<List> _fetchRecentExpenses(String? branchId) async {
+    dynamic q = _client
+        .from('expenses')
+        .select('id, branch_id, category, amount, description, expense_date, created_at, branches(name)');
+    if (branchId != null) q = q.eq('branch_id', branchId);
+    return await q
+        .order('expense_date', ascending: false)
+        .order('created_at', ascending: false)
+        .limit(30) as List;
+  }
+
+  Future<List> _fetchLowStockRows(String? branchId) async {
+    dynamic q = _client
+        .from('v_low_stock')
+        .select('branch_id, branch_name, item_name, reorder_level, quantity_on_hand');
+    if (branchId != null) q = q.eq('branch_id', branchId);
+    return await q.limit(500) as List;
+  }
+
+  Future<List> _fetchExpiringRows(String? branchId) async {
+    dynamic q = _client
+        .from('v_expiring_soon')
+        .select('branch_id, branch_name, item_name, expiry_date, days_to_expiry');
+    if (branchId != null) q = q.eq('branch_id', branchId);
+    return await q.limit(500) as List;
   }
 
   String _todayDateStr() {

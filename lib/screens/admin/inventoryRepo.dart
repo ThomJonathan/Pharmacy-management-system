@@ -213,6 +213,12 @@ class SupplierBalance {
   });
 }
 
+class BusinessTypeOption {
+  final String id;
+  final String name;
+  const BusinessTypeOption({required this.id, required this.name});
+}
+
 class CatalogItem {
   final String id;
   final String name;
@@ -221,6 +227,9 @@ class CatalogItem {
   final double reorderLevel;
   final bool requiresPrescription;
   final bool isActive;
+  final String businessTypeId;
+  final String businessTypeName;
+
   const CatalogItem({
     required this.id,
     required this.name,
@@ -229,6 +238,8 @@ class CatalogItem {
     required this.reorderLevel,
     required this.requiresPrescription,
     required this.isActive,
+    this.businessTypeId = '',
+    this.businessTypeName = 'Pharmacy',
   });
 }
 
@@ -467,30 +478,104 @@ class InventoryRepository {
         .toList();
   }
 
+  Future<List<BusinessTypeOption>> fetchBusinessTypes() async {
+    final rows = await _client
+        .from('business_types')
+        .select('id, name')
+        .eq('is_active', true)
+        .order('name') as List;
+    return rows
+        .map((r) => BusinessTypeOption(
+              id: r['id'] as String,
+              name: r['name'] as String,
+            ))
+        .toList();
+  }
+
+  Future<List<String>> fetchBranchBusinessTypeIds(String branchId) async {
+    final rows = await _client
+        .from('branch_business_types')
+        .select('business_type_id')
+        .eq('branch_id', branchId) as List;
+    return rows.map((r) => r['business_type_id'] as String).toList();
+  }
+
   Future<List<CatalogItem>> fetchCatalog({bool includeInactive = true}) async {
     dynamic q = _client
         .from('items')
         .select(
-          'id, name, category, unit, reorder_level, requires_prescription, is_active',
+          'id, name, category, unit, reorder_level, requires_prescription, is_active, business_type_id, business_types(name)',
         );
     if (!includeInactive) q = q.eq('is_active', true);
     final rows = await q.order('name').limit(2000) as List;
     return rows
         .map(
-          (r) => CatalogItem(
-            id: r['id'] as String,
-            name: (r['name'] as String?) ?? '—',
-            category: (r['category'] as String?)?.trim().isNotEmpty == true
-                ? (r['category'] as String).trim()
-                : 'Uncategorised',
-            unit: (r['unit'] as String?) ?? 'unit',
-            reorderLevel: ((r['reorder_level'] as num?) ?? 10).toDouble(),
-            requiresPrescription:
-                (r['requires_prescription'] as bool?) ?? false,
-            isActive: (r['is_active'] as bool?) ?? true,
-          ),
+          (r) {
+            final bt = r['business_types'];
+            final btName = bt is Map ? (bt['name'] as String? ?? 'Pharmacy') : 'Pharmacy';
+            return CatalogItem(
+              id: r['id'] as String,
+              name: (r['name'] as String?) ?? '—',
+              category: (r['category'] as String?)?.trim().isNotEmpty == true
+                  ? (r['category'] as String).trim()
+                  : 'Uncategorised',
+              unit: (r['unit'] as String?) ?? 'unit',
+              reorderLevel: ((r['reorder_level'] as num?) ?? 10).toDouble(),
+              requiresPrescription:
+                  (r['requires_prescription'] as bool?) ?? false,
+              isActive: (r['is_active'] as bool?) ?? true,
+              businessTypeId: (r['business_type_id'] as String?) ?? '',
+              businessTypeName: btName,
+            );
+          },
         )
         .toList();
+  }
+
+  /// Exact (case-insensitive) name matches already in the catalog, for the
+  /// duplicate warning on the item form. The caller drops the row being
+  /// edited, if any.
+  Future<List<CatalogItem>> findItemsByName(String name) async {
+    final clean = name.trim();
+    if (clean.isEmpty) return [];
+    // Escape LIKE wildcards so a name like "100%" can't match "1000".
+    final pattern = clean
+        .replaceAll(r'\', r'\\')
+        .replaceAll('%', r'\%')
+        .replaceAll('_', r'\_');
+    final rows = await _client
+        .from('items')
+        .select(
+          'id, name, category, unit, reorder_level, requires_prescription, is_active, business_type_id, business_types(name)',
+        )
+        .ilike('name', pattern)
+        .limit(10) as List;
+    final lower = clean.toLowerCase();
+    final out = <CatalogItem>[];
+    for (final r in rows) {
+      final map = Map<String, dynamic>.from(r as Map);
+      final itemName = (map['name'] as String?) ?? '';
+      if (itemName.trim().toLowerCase() != lower) continue;
+      final bt = map['business_types'];
+      out.add(
+        CatalogItem(
+          id: map['id'] as String,
+          name: itemName,
+          category: (map['category'] as String?)?.trim().isNotEmpty == true
+              ? (map['category'] as String).trim()
+              : 'Uncategorised',
+          unit: (map['unit'] as String?) ?? 'unit',
+          reorderLevel: ((map['reorder_level'] as num?) ?? 10).toDouble(),
+          requiresPrescription:
+              (map['requires_prescription'] as bool?) ?? false,
+          isActive: (map['is_active'] as bool?) ?? true,
+          businessTypeId: (map['business_type_id'] as String?) ?? '',
+          businessTypeName:
+              bt is Map ? (bt['name'] as String? ?? 'Pharmacy') : 'Pharmacy',
+        ),
+      );
+    }
+    return out;
   }
 
   /// Admin stock adjustment. [deltaQty] is signed: negative removes stock
@@ -627,9 +712,13 @@ class InventoryRepository {
     required String unit,
     required double reorderLevel,
     required bool requiresPrescription,
+    required String businessTypeId,
   }) async {
     if (name.trim().isEmpty) {
       throw const InventoryException('Item name is required.');
+    }
+    if (businessTypeId.trim().isEmpty) {
+      throw const InventoryException('Business type is required.');
     }
     await _client.from('items').insert({
       'name': name.trim(),
@@ -637,6 +726,7 @@ class InventoryRepository {
       'unit': unit.trim().isEmpty ? 'unit' : unit.trim(),
       'reorder_level': reorderLevel,
       'requires_prescription': requiresPrescription,
+      'business_type_id': businessTypeId,
     });
   }
 
@@ -647,9 +737,13 @@ class InventoryRepository {
     required String unit,
     required double reorderLevel,
     required bool requiresPrescription,
+    required String businessTypeId,
   }) async {
     if (name.trim().isEmpty) {
       throw const InventoryException('Item name is required.');
+    }
+    if (businessTypeId.trim().isEmpty) {
+      throw const InventoryException('Business type is required.');
     }
     await _client
         .from('items')
@@ -659,6 +753,7 @@ class InventoryRepository {
           'unit': unit.trim().isEmpty ? 'unit' : unit.trim(),
           'reorder_level': reorderLevel,
           'requires_prescription': requiresPrescription,
+          'business_type_id': businessTypeId,
         })
         .eq('id', id);
   }

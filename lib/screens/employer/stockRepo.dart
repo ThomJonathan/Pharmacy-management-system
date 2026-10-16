@@ -47,6 +47,23 @@ class CatalogOption {
   const CatalogOption({required this.id, required this.name});
 }
 
+class ExistingCatalogMatch {
+  final String name;
+  final String unit;
+  final String businessType;
+  const ExistingCatalogMatch({
+    required this.name,
+    required this.unit,
+    required this.businessType,
+  });
+}
+
+class BusinessTypeOption {
+  final String id;
+  final String name;
+  const BusinessTypeOption({required this.id, required this.name});
+}
+
 class SupplierOption {
   final String id;
   final String name;
@@ -161,6 +178,43 @@ class CashierStockRepository {
     return rows.map((r) => CatalogOption(id: r['id'] as String, name: (r['name'] as String?) ?? '—')).toList();
   }
 
+  /// Exact (case-insensitive) name match already in the catalog, for the
+  /// duplicate warning on the add-product form. Note: staff RLS only shows
+  /// items of their own branch's business types, so a same-named item under
+  /// a type this branch doesn't run is invisible here — the admin-side
+  /// check (which sees everything) remains the backstop.
+  Future<List<ExistingCatalogMatch>> findItemsByName(String name) async {
+    try {
+      final clean = name.trim();
+      if (clean.isEmpty) return [];
+      // Escape LIKE wildcards so a name like "100%" can't match "1000".
+      final pattern = clean
+          .replaceAll(r'\', r'\\')
+          .replaceAll('%', r'\%')
+          .replaceAll('_', r'\_');
+      final rows = await _client
+          .from('items')
+          .select('name, unit, business_types(name)')
+          .ilike('name', pattern)
+          .limit(10) as List;
+      final lower = clean.toLowerCase();
+      final out = <ExistingCatalogMatch>[];
+      for (final r in rows) {
+        final n = (r['name'] as String?) ?? '';
+        if (n.trim().toLowerCase() != lower) continue;
+        final bt = r['business_types'];
+        out.add(ExistingCatalogMatch(
+          name: n,
+          unit: (r['unit'] as String?) ?? 'unit',
+          businessType: bt is Map ? (bt['name'] as String? ?? '') : '',
+        ));
+      }
+      return out;
+    } catch (_) {
+      return const [];
+    }
+  }
+
   Future<List<SupplierOption>> fetchSuppliers() async {
     final rows = await _client.from('suppliers').select('id, name').eq('is_active', true).order('name').limit(200) as List;
     return rows.map((r) => SupplierOption(id: r['id'] as String, name: (r['name'] as String?) ?? '—')).toList();
@@ -219,6 +273,129 @@ class CashierStockRepository {
   Future<void> endOwnAccess(String requestId) async {
     try {
       await _client.rpc('revoke_stock_access', params: {'p_request_id': requestId});
+    } on PostgrestException catch (e) {
+      throw StockException(e.message);
+    }
+  }
+
+  // ---- Catalog access & additions --------------------------------------------
+
+  Future<bool> hasCatalogAccess() async {
+    try {
+      final res = await _client.rpc('has_catalog_access');
+      return res as bool? ?? false;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<OwnAccess> myCatalogStatus() async {
+    try {
+      final rows = await _client
+          .from('v_catalog_access_requests')
+          .select('id, effective_status, expires_at, decided_at')
+          .limit(50) as List;
+      for (final r in rows) {
+        if ((r['effective_status'] as String?) == 'pending') {
+          return const OwnAccess(state: OwnAccessState.pending);
+        }
+      }
+      for (final r in rows) {
+        if ((r['effective_status'] as String?) == 'approved') {
+          DateTime? dt(Object? v) {
+            if (v == null) return null;
+            try {
+              return DateTime.parse(v as String);
+            } catch (_) {
+              return null;
+            }
+          }
+
+          return OwnAccess(
+            state: OwnAccessState.active,
+            requestId: r['id'] as String,
+            expiresAt: dt(r['expires_at']),
+            decidedAt: dt(r['decided_at']),
+          );
+        }
+      }
+      return const OwnAccess(state: OwnAccessState.none);
+    } catch (_) {
+      return const OwnAccess(state: OwnAccessState.none);
+    }
+  }
+
+  Future<void> requestCatalogAccess(String reason) async {
+    try {
+      final clean = reason.trim();
+      // Omit p_reason when empty (uses the DEFAULT NULL) instead of
+      // sending an explicit null — same pattern as receive() below.
+      if (clean.isEmpty) {
+        await _client.rpc('request_catalog_access');
+      } else {
+        await _client.rpc('request_catalog_access', params: {'p_reason': clean});
+      }
+    } on PostgrestException catch (e) {
+      throw StockException(e.message);
+    }
+  }
+
+  Future<void> endOwnCatalogAccess(String requestId) async {
+    try {
+      await _client.rpc('revoke_catalog_access', params: {
+        'p_request_id': requestId,
+      });
+    } on PostgrestException catch (e) {
+      throw StockException(e.message);
+    }
+  }
+
+  Future<List<BusinessTypeOption>> fetchBranchBusinessTypes(String branchId) async {
+    try {
+      final rows = await _client
+          .from('branch_business_types')
+          .select('business_type_id, business_types(id, name)')
+          .eq('branch_id', branchId) as List;
+      final out = <BusinessTypeOption>[];
+      for (final r in rows) {
+        final bt = r['business_types'];
+        if (bt is Map) {
+          out.add(BusinessTypeOption(
+            id: bt['id'] as String,
+            name: bt['name'] as String,
+          ));
+        }
+      }
+      return out;
+    } catch (_) {
+      return const [];
+    }
+  }
+
+  Future<CatalogOption> addCatalogItem({
+    required String name,
+    required String businessTypeId,
+    String? category,
+    String? unit,
+    double? reorderLevel,
+    bool requiresPrescription = false,
+  }) async {
+    if (name.trim().isEmpty) {
+      throw const StockException('Item name is required.');
+    }
+    if (businessTypeId.trim().isEmpty) {
+      throw const StockException('Please select a business type.');
+    }
+    try {
+      final res = await _client.rpc('add_catalog_item', params: {
+        'p_name': name.trim(),
+        'p_business_type_id': businessTypeId,
+        'p_category': category?.trim().isEmpty == true ? null : category?.trim(),
+        'p_unit': unit?.trim().isEmpty == true ? 'unit' : unit?.trim(),
+        'p_reorder_level': reorderLevel ?? 10,
+        'p_requires_prescription': requiresPrescription,
+      });
+      return CatalogOption(id: res as String, name: name.trim());
     } on PostgrestException catch (e) {
       throw StockException(e.message);
     }

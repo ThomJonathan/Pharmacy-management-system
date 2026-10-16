@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../screens/admin/catalogAccessRepo.dart';
 import '../screens/admin/stockAccessRepo.dart';
 
 // ============================================================================
@@ -441,34 +442,38 @@ class _SideNav extends StatelessWidget {
                         if (isUsers)
                           ValueListenableBuilder<int>(
                             valueListenable: stockAccessPendingCount,
-                            builder: (_, pending, _) {
-                              if (pending <= 0) return const SizedBox.shrink();
-                              return Row(
-                                children: [
-                                  const SizedBox(width: 8),
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 6,
-                                      vertical: 1.5,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      color: active
-                                          ? Colors.white
-                                          : const Color(0xFFB4544A),
-                                      borderRadius: BorderRadius.circular(3),
-                                    ),
-                                    child: Text(
-                                      '$pending',
-                                      style: GoogleFonts.ibmPlexSans(
-                                        fontSize: 10.5,
-                                        fontWeight: FontWeight.w700,
-                                        color: active ? primary : Colors.white,
+                            builder: (_, sPending, _) => ValueListenableBuilder<int>(
+                              valueListenable: catalogAccessPendingCount,
+                              builder: (_, cPending, _) {
+                                final pending = sPending + cPending;
+                                if (pending <= 0) return const SizedBox.shrink();
+                                return Row(
+                                  children: [
+                                    const SizedBox(width: 8),
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 6,
+                                        vertical: 1.5,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: active
+                                            ? Colors.white
+                                            : const Color(0xFFB4544A),
+                                        borderRadius: BorderRadius.circular(3),
+                                      ),
+                                      child: Text(
+                                        '$pending',
+                                        style: GoogleFonts.ibmPlexSans(
+                                          fontSize: 10.5,
+                                          fontWeight: FontWeight.w700,
+                                          color: active ? primary : Colors.white,
+                                        ),
                                       ),
                                     ),
-                                  ),
-                                ],
-                              );
-                            },
+                                  ],
+                                );
+                              },
+                            ),
                           ),
                       ],
                     ),

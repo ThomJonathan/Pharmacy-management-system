@@ -7,6 +7,7 @@ import '../../widgets/adminShell.dart';
 import 'adminhomeRepo.dart';
 import 'adminui.dart';
 import 'branch.dart';
+import 'catalogAccessRepo.dart';
 import 'inventory.dart';
 import 'reports.dart';
 import 'settings.dart';
@@ -527,6 +528,8 @@ class _MobileLayout extends StatelessWidget {
         ),
         const SizedBox(height: 10),
         const _StockAccessCard(),
+        const SizedBox(height: 10),
+        const _CatalogAccessCard(),
         const SizedBox(height: 24),
       ],
     );
@@ -652,6 +655,8 @@ class _DesktopLayout extends StatelessWidget {
         ),
         const SizedBox(height: 16),
         const _StockAccessCard(),
+        const SizedBox(height: 10),
+        const _CatalogAccessCard(),
       ],
     );
   }
@@ -1002,13 +1007,23 @@ class _AttentionButton extends StatelessWidget {
 }
 
 // Home "Stock access" card: waiting + active counts, opens the Pending tab.
-class _StockAccessCard extends StatelessWidget {
+// Stateful so the fetch happens once — a fresh FutureBuilder future on
+// every build would re-hit the network each time the homepage rebuilds.
+class _StockAccessCard extends StatefulWidget {
   const _StockAccessCard();
+
+  @override
+  State<_StockAccessCard> createState() => _StockAccessCardState();
+}
+
+class _StockAccessCardState extends State<_StockAccessCard> {
+  late final Future<List<StockAccessRequest>> _future =
+      StockAccessRepository().fetchAll();
 
   @override
   Widget build(BuildContext context) {
     return FutureBuilder<List<StockAccessRequest>>(
-      future: StockAccessRepository().fetchAll(),
+      future: _future,
       builder: (context, snap) {
         final rows = snap.data ?? [];
         final waiting = rows.where((r) => r.isPending).length;
@@ -1057,6 +1072,87 @@ class _StockAccessCard extends StatelessWidget {
                         const SizedBox(height: 2),
                         Text(
                           'Cashier stock permissions',
+                          style: _sans(12, color: _kInkMuted),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const Icon(Icons.chevron_right, size: 18, color: _kInkMuted),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+// Home "Catalog access" card: waiting + active counts, opens the Pending tab.
+// Stateful so the fetch happens once — see _StockAccessCard above.
+class _CatalogAccessCard extends StatefulWidget {
+  const _CatalogAccessCard();
+
+  @override
+  State<_CatalogAccessCard> createState() => _CatalogAccessCardState();
+}
+
+class _CatalogAccessCardState extends State<_CatalogAccessCard> {
+  late final Future<List<CatalogAccessRequest>> _future =
+      CatalogAccessRepository().fetchAll();
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<List<CatalogAccessRequest>>(
+      future: _future,
+      builder: (context, snap) {
+        final rows = snap.data ?? [];
+        final waiting = rows.where((r) => r.isPending).length;
+        final active = rows.where((r) => r.isActive).length;
+        // Keep the Users nav badge fresh even if the Users tab never opens.
+        if (snap.hasData) catalogAccessPendingCount.value = waiting;
+        final title = snap.hasError
+            ? 'Catalog access'
+            : waiting == 0 && active == 0
+            ? 'No catalog access requests'
+            : '$waiting waiting · $active active';
+        return Material(
+          color: Colors.transparent,
+          child: InkWell(
+            borderRadius: BorderRadius.circular(4),
+            onTap: () {
+              catalogAccessInitialTab.value = 0; // Pending tab
+              AdminShell.switchTo(context, 3); // Users tab
+            },
+            child: Container(
+              decoration: BoxDecoration(
+                border: Border.all(color: _kBorder),
+                borderRadius: BorderRadius.circular(4),
+              ),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.library_add_outlined,
+                    size: 18,
+                    color: waiting > 0 ? _kWarnColor : _kPrimary,
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          title,
+                          style: _sans(
+                            13.5,
+                            weight: FontWeight.w600,
+                            color: _kInk,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          'Employee catalog permissions',
                           style: _sans(12, color: _kInkMuted),
                         ),
                       ],
