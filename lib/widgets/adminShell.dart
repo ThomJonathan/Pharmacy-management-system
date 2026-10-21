@@ -397,7 +397,7 @@ class _SideNav extends StatelessWidget {
           Padding(
             padding: const EdgeInsets.fromLTRB(10, 0, 10, 24),
             child: Text(
-              'TUMAINI INVESTMENTS',
+              'STOCKA',
               style: GoogleFonts.ibmPlexSans(
                 fontSize: 13,
                 fontWeight: FontWeight.w700,

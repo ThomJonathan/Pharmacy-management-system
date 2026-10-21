@@ -3,7 +3,9 @@ import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 
-const businessName = 'TUMAINI INVESTMENTS';
+import '../../core/quantityUnit.dart';
+
+const businessName = 'STOCKA';
 
 class ReceiptService {
   static final _money = NumberFormat('#,##0.00');
@@ -75,8 +77,11 @@ class ReceiptService {
           if (r['sale_type'] == 'wholesale') line('Sale type', 'Wholesale'),
           divider,
           for (final it in items) ...[
-            pw.Text(it['name'], style: const pw.TextStyle(fontSize: 9)),
-            line('  ${it['quantity']} x ${_money.format(it['unit_price'])}', _money.format(it['subtotal'])),
+            pw.Text((it['name'] as String?) ?? '—', style: const pw.TextStyle(fontSize: 9)),
+            line(
+              '  ${fmtQty((it['quantity'] as num?) ?? 0)}${it['unit'] != null && (it['unit'] as String).isNotEmpty ? ' ${it['unit']}' : ''} x ${_money.format(it['unit_price'])}',
+              _money.format(it['subtotal']),
+            ),
             pw.SizedBox(height: 2),
           ],
           divider,

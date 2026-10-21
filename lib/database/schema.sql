@@ -1526,16 +1526,20 @@ VALUES (v_branch, p_customer_id, v_uid, p_sale_type, p_payment_method,
 
 -- one pass per item, always in item_id order so two sales can't deadlock
 FOR v_line IN
-SELECT (l->>'item_id')::uuid AS item_id, SUM((l->>'quantity')::numeric) AS qty
+SELECT (l->>'item_id')::uuid AS item_id,
+       SUM((l->>'quantity')::numeric) AS qty,
+       COALESCE(NULLIF(l->>'unit', ''), NULL) AS unit_name
 FROM jsonb_array_elements(p_lines) AS l
-GROUP BY 1 ORDER BY 1
+GROUP BY 1, 3 ORDER BY 1
     LOOP
         IF v_line.qty <= 0 THEN RAISE EXCEPTION 'Quantities must be greater than zero.'; END IF;
 
 SELECT name INTO v_item_name FROM items WHERE id = v_line.item_id AND is_active;
 IF v_item_name IS NULL THEN RAISE EXCEPTION 'An item in this sale is missing or discontinued.'; END IF;
 
-        v_remaining := v_line.qty;
+        -- Convert to the item's base unit (inventory is always counted in base).
+        -- A missing/unknown unit means the quantity is already in base units.
+        v_remaining := to_base_qty(v_line.item_id, COALESCE(v_line.unit_name, ''), v_line.qty);
 
         -- first-expiry-first-out; skip expired batches; lock rows so nobody else can sell them
 FOR v_batch IN
@@ -1554,9 +1558,9 @@ v_take  := LEAST(v_remaining, v_batch.quantity_available);
                             ELSE v_batch.retail_price END;
 
 INSERT INTO sale_items (sale_id, item_id, inventory_id, quantity,
-                        unit_price, unit_cost, subtotal)
+                        unit_price, unit_cost, subtotal, unit)
 VALUES (v_sale_id, v_line.item_id, v_batch.id, v_take,
-        v_price, v_batch.buying_price, v_take * v_price);
+        v_price, v_batch.buying_price, v_take * v_price, v_line.unit_name);
 
 UPDATE inventory SET quantity_available = quantity_available - v_take
 WHERE id = v_batch.id;
@@ -1849,6 +1853,10 @@ BEGIN
         IF NOT EXISTS (SELECT 1 FROM items WHERE id = v_item_id AND is_active) THEN
             RAISE EXCEPTION 'An item is missing or discontinued.';
         END IF;
+
+        -- A bigger unit ("2 bottles") converts to base units ("200 ml").
+        -- Prices are per base unit and must NOT be scaled.
+        v_qty := to_base_qty(v_item_id, COALESCE(NULLIF(trim(v_line->>'unit'), ''), ''), v_qty);
 
         INSERT INTO inventory (
             item_id, branch_id, batch_number, buying_price, retail_price,
@@ -2363,3 +2371,711 @@ from pg_proc
 where proname in ('request_catalog_access', 'has_catalog_access',
                   'decide_catalog_access', 'revoke_catalog_access',
                   'add_catalog_item');
+
+
+
+-- ============================================================================
+-- CATALOG ACCESS FOR EMPLOYEES
+-- Run AFTER branch_business_types.sql (needs branch_runs_business_type(),
+-- business_types, items.business_type_id) and the stock access migration.
+--
+-- Employees (cashiers) request access to add new products to the catalog.
+-- An admin approves (optionally time-limited) or denies, and can revoke.
+-- A product must belong to a business type the employee's branch runs, and
+-- is then visible to every branch running that type.
+-- Safe to re-run.
+-- ============================================================================
+
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'catalog_access_status') THEN
+CREATE TYPE catalog_access_status AS ENUM ('pending', 'approved', 'denied', 'revoked', 'expired');
+END IF;
+END
+$$;
+
+CREATE TABLE IF NOT EXISTS catalog_access_grants (
+                                                     id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id       uuid NOT NULL REFERENCES users(id),
+    branch_id     uuid NOT NULL REFERENCES branches(id),
+    reason        text,
+    status        catalog_access_status NOT NULL DEFAULT 'pending',
+    requested_at  timestamptz NOT NULL DEFAULT now(),
+    decided_by    uuid REFERENCES users(id),
+    decided_at    timestamptz,
+    expires_at    timestamptz,                -- NULL = until the admin removes it
+    revoked_by    uuid REFERENCES users(id),
+    revoked_at    timestamptz
+    );
+
+-- One open request or grant per person
+CREATE UNIQUE INDEX IF NOT EXISTS one_open_catalog_access_per_user
+    ON catalog_access_grants(user_id) WHERE status IN ('pending', 'approved');
+
+ALTER TABLE catalog_access_grants ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "View catalog access: admin all, user own" ON catalog_access_grants;
+CREATE POLICY "View catalog access: admin all, user own"
+    ON catalog_access_grants FOR SELECT
+                                                 USING (is_admin() OR user_id = auth.uid());
+
+-- Helper: has_catalog_access()
+CREATE OR REPLACE FUNCTION has_catalog_access() RETURNS boolean
+LANGUAGE sql SECURITY DEFINER STABLE SET search_path = public AS $$
+SELECT COALESCE((
+                    SELECT u.is_active AND (
+                        u.role IN ('admin', 'manager')
+                            OR EXISTS (
+                            SELECT 1 FROM catalog_access_grants g
+                            WHERE g.user_id = u.id AND g.status = 'approved'
+                              AND (g.expires_at IS NULL OR g.expires_at > now())
+                        )
+                        )
+                    FROM users u WHERE u.id = auth.uid()
+                ), false);
+$$;
+
+-- 1. Employee asks for catalog access
+CREATE OR REPLACE FUNCTION request_catalog_access(p_reason text DEFAULT NULL) RETURNS uuid
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+DECLARE v_uid uuid := auth.uid(); v_role user_role; v_branch uuid; v_id uuid;
+BEGIN
+SELECT role, branch_id INTO v_role, v_branch FROM users WHERE id = v_uid AND is_active;
+IF v_role IS NULL THEN RAISE EXCEPTION 'Your account is not active.'; END IF;
+    IF v_role = 'admin' THEN
+        RAISE EXCEPTION 'Admins already have full catalog access.';
+END IF;
+
+UPDATE catalog_access_grants SET status = 'expired'
+WHERE user_id = v_uid AND status = 'approved'
+  AND expires_at IS NOT NULL AND expires_at <= now();
+
+IF EXISTS (SELECT 1 FROM catalog_access_grants WHERE user_id = v_uid AND status = 'pending') THEN
+        RAISE EXCEPTION 'You already have a catalog request waiting for the admin.';
+END IF;
+    IF EXISTS (SELECT 1 FROM catalog_access_grants WHERE user_id = v_uid AND status = 'approved') THEN
+        RAISE EXCEPTION 'You already have catalog access.';
+END IF;
+
+INSERT INTO catalog_access_grants (user_id, branch_id, reason)
+VALUES (v_uid, v_branch, NULLIF(trim(p_reason), ''))
+    RETURNING id INTO v_id;
+RETURN v_id;
+END;
+$$;
+
+-- 2. Admin decides (approves with optional hours, or denies)
+CREATE OR REPLACE FUNCTION decide_catalog_access(
+    p_request_id uuid, p_approve boolean, p_hours int DEFAULT NULL) RETURNS void
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+BEGIN
+    IF NOT is_admin() THEN RAISE EXCEPTION 'Only admins can approve catalog access.'; END IF;
+    IF p_hours IS NOT NULL AND p_hours <= 0 THEN
+        RAISE EXCEPTION 'The time limit must be above zero hours.';
+END IF;
+
+UPDATE catalog_access_grants
+SET status = CASE WHEN p_approve THEN 'approved'::catalog_access_status
+                  ELSE 'denied'::catalog_access_status END,
+    decided_by = auth.uid(),
+    decided_at = now(),
+    expires_at = CASE WHEN p_approve AND p_hours IS NOT NULL
+                          THEN now() + make_interval(hours => p_hours) END
+WHERE id = p_request_id AND status = 'pending';
+IF NOT FOUND THEN RAISE EXCEPTION 'This request is no longer waiting.'; END IF;
+END;
+$$;
+
+-- 3. Admin revokes, or the employee ends their own access
+CREATE OR REPLACE FUNCTION revoke_catalog_access(p_request_id uuid) RETURNS void
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+BEGIN
+UPDATE catalog_access_grants
+SET status = 'revoked', revoked_by = auth.uid(), revoked_at = now()
+WHERE id = p_request_id AND status = 'approved'
+  AND (is_admin() OR user_id = auth.uid());
+IF NOT FOUND THEN RAISE EXCEPTION 'There is no active catalog access to end.'; END IF;
+END;
+$$;
+
+-- 4. Add a catalog item
+CREATE OR REPLACE FUNCTION add_catalog_item(
+    p_name                  text,
+    p_business_type_id      uuid,
+    p_category              text DEFAULT NULL,
+    p_unit                  text DEFAULT 'unit',
+    p_reorder_level         numeric DEFAULT 10,
+    p_requires_prescription boolean DEFAULT false
+) RETURNS uuid
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+DECLARE
+v_uid uuid := auth.uid();
+    v_role user_role;
+    v_branch uuid;
+    v_item_id uuid;
+BEGIN
+    IF v_uid IS NULL THEN RAISE EXCEPTION 'Not signed in.'; END IF;
+SELECT role, branch_id INTO v_role, v_branch FROM users WHERE id = v_uid AND is_active;
+IF v_role IS NULL THEN RAISE EXCEPTION 'User account is not active.'; END IF;
+
+    IF v_role <> 'admin' THEN
+        IF NOT has_catalog_access() THEN
+            RAISE EXCEPTION 'Active catalog access is required to add new items.';
+END IF;
+        IF NOT branch_runs_business_type(v_branch, p_business_type_id) THEN
+            RAISE EXCEPTION 'Your branch does not run this business type. You can only add items for business types your branch operates.';
+END IF;
+END IF;
+
+    IF trim(COALESCE(p_name, '')) = '' THEN
+        RAISE EXCEPTION 'Item name is required.';
+END IF;
+    IF p_business_type_id IS NULL THEN
+        RAISE EXCEPTION 'Business type is required.';
+END IF;
+    IF NOT EXISTS (SELECT 1 FROM business_types WHERE id = p_business_type_id AND is_active) THEN
+        RAISE EXCEPTION 'Business type not found or inactive.';
+END IF;
+
+INSERT INTO items (
+    name, business_type_id, category, unit, reorder_level, requires_prescription
+) VALUES (
+             trim(p_name),
+             p_business_type_id,
+             NULLIF(trim(p_category), ''),
+             COALESCE(NULLIF(trim(p_unit), ''), 'unit'),
+             COALESCE(p_reorder_level, 10),
+             COALESCE(p_requires_prescription, false)
+         ) RETURNING id INTO v_item_id;
+
+RETURN v_item_id;
+END;
+$$;
+
+-- 5. Readable view for the admin screen and the cashier's own status
+CREATE OR REPLACE VIEW v_catalog_access_requests WITH (security_invoker = true) AS
+SELECT g.id, g.user_id, u.full_name, g.branch_id, b.name AS branch_name,
+       g.reason, g.requested_at, g.decided_at, g.expires_at, g.revoked_at,
+       d.full_name AS decided_by_name, r.full_name AS revoked_by_name,
+       g.revoked_by AS revoked_by_id,
+       CASE WHEN g.status = 'approved' AND g.expires_at IS NOT NULL AND g.expires_at <= now()
+                THEN 'expired' ELSE g.status::text END AS effective_status
+FROM catalog_access_grants g
+         JOIN users u ON u.id = g.user_id
+         JOIN branches b ON b.id = g.branch_id
+         LEFT JOIN users d ON d.id = g.decided_by
+         LEFT JOIN users r ON r.id = g.revoked_by
+ORDER BY g.requested_at DESC;
+
+-- Permissions
+REVOKE ALL ON FUNCTION request_catalog_access(text)              FROM PUBLIC, anon;
+REVOKE ALL ON FUNCTION decide_catalog_access(uuid, boolean, int) FROM PUBLIC, anon;
+REVOKE ALL ON FUNCTION revoke_catalog_access(uuid)               FROM PUBLIC, anon;
+REVOKE ALL ON FUNCTION has_catalog_access()                      FROM PUBLIC, anon;
+REVOKE ALL ON FUNCTION add_catalog_item(text, uuid, text, text, numeric, boolean) FROM PUBLIC, anon;
+
+GRANT EXECUTE ON FUNCTION request_catalog_access(text)              TO authenticated;
+GRANT EXECUTE ON FUNCTION decide_catalog_access(uuid, boolean, int) TO authenticated;
+GRANT EXECUTE ON FUNCTION revoke_catalog_access(uuid)               TO authenticated;
+GRANT EXECUTE ON FUNCTION has_catalog_access()                      TO authenticated;
+GRANT EXECUTE ON FUNCTION add_catalog_item(text, uuid, text, text, numeric, boolean) TO authenticated;
+
+-- Make the API pick up the new functions straight away
+NOTIFY pgrst, 'reload schema';
+
+
+       -- ============================================================================
+-- FRACTIONAL / MULTI-UNIT QUANTITIES
+-- Run after all earlier migrations. Safe to re-run.
+--
+-- Idea: every quantity in the system (inventory, sale_items, stock_movements,
+-- purchase_items) is stored in the item's BASE UNIT = the smallest thing you
+-- would ever sell: tablet, ml, g, piece. items.unit already exists, so it
+-- simply becomes "the base unit". Nothing existing breaks: old items keep
+-- their unit and a step of 1.
+--
+--   Paracetamol syrup : unit 'ml',     step 1,   bottle = 100 ml
+--   Amoxicillin       : unit 'tablet', step 1,   strip = 10, box = 100
+--   Powder / herbs    : unit 'g',      step 1,   kg = 1000
+--
+-- Prices (buying_price, retail_price, wholesale_price, unit_price, unit_cost)
+-- are then PER BASE UNIT. A 100 ml bottle at MWK 1,500 is 15.00 per ml.
+-- The app shows "per bottle" by multiplying by the unit factor.
+--
+-- Quantity columns are already NUMERIC(12,2), so 0.01 precision is available
+-- without altering any column (changing types would force dropping views).
+-- ============================================================================
+
+-- 1. Per-item rules ------------------------------------------------------------
+-- quantity_step = smallest sellable amount, and every quantity must be a
+-- multiple of it. 1 = whole units only (the default, same as today).
+-- 0.5 = halves allowed. 10 = sold only in tens of the base unit.
+ALTER TABLE items
+    ADD COLUMN IF NOT EXISTS quantity_step NUMERIC(12,2) NOT NULL DEFAULT 1;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'items_quantity_step_positive') THEN
+ALTER TABLE items ADD CONSTRAINT items_quantity_step_positive CHECK (quantity_step > 0);
+END IF;
+END
+$$;
+
+-- 2. Bigger units that convert into the base unit -----------------------------
+CREATE TABLE IF NOT EXISTS item_units (
+                                          id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    item_id     uuid NOT NULL REFERENCES items(id) ON DELETE CASCADE,
+    unit_name   text NOT NULL,                       -- 'bottle', 'box', 'strip', 'kg'
+    factor      NUMERIC(12,2) NOT NULL CHECK (factor > 0),  -- how many base units in one
+    created_at  timestamptz NOT NULL DEFAULT now()
+    );
+CREATE UNIQUE INDEX IF NOT EXISTS uq_item_units_name
+    ON item_units (item_id, lower(trim(unit_name)));
+
+ALTER TABLE item_units ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "View item units with the item" ON item_units;
+CREATE POLICY "View item units with the item"
+    ON item_units FOR SELECT
+                                      USING (EXISTS (SELECT 1 FROM items i WHERE i.id = item_units.item_id));  -- items RLS applies
+
+DROP POLICY IF EXISTS "Admins manage item units" ON item_units;
+CREATE POLICY "Admins manage item units"
+    ON item_units FOR ALL USING (is_admin()) WITH CHECK (is_admin());
+
+-- 3. Conversion helper: "5 boxes" -> 500 tablets -------------------------------
+-- Pass the base unit name (or NULL) to get the quantity back unchanged.
+CREATE OR REPLACE FUNCTION to_base_qty(p_item_id uuid, p_unit_name text, p_qty numeric)
+RETURNS numeric
+LANGUAGE plpgsql STABLE SET search_path = public AS $$
+DECLARE v_base text; v_factor numeric;
+BEGIN
+SELECT unit INTO v_base FROM items WHERE id = p_item_id;
+IF v_base IS NULL THEN RAISE EXCEPTION 'Item not found.'; END IF;
+  IF p_unit_name IS NULL OR lower(trim(p_unit_name)) = lower(trim(v_base)) THEN
+    RETURN p_qty;
+END IF;
+SELECT factor INTO v_factor FROM item_units
+WHERE item_id = p_item_id AND lower(trim(unit_name)) = lower(trim(p_unit_name));
+IF v_factor IS NULL THEN
+    RAISE EXCEPTION 'No unit "%" is set up for this item.', p_unit_name;
+END IF;
+RETURN p_qty * v_factor;
+END;
+$$;
+REVOKE ALL ON FUNCTION to_base_qty(uuid, text, numeric) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION to_base_qty(uuid, text, numeric) TO authenticated;
+
+-- 4. Enforce the step everywhere, whatever the app does ------------------------
+-- A trigger (not a change to create_sale) so receive_stock_delivery, direct
+-- inserts and future code are all covered, and create_sale needs no rewrite.
+CREATE OR REPLACE FUNCTION fn_enforce_quantity_step() RETURNS trigger
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+DECLARE
+v_qty  numeric := (to_jsonb(NEW) ->> TG_ARGV[0])::numeric;
+  v_step numeric;
+  v_name text;
+  v_unit text;
+BEGIN
+SELECT quantity_step, name, unit INTO v_step, v_name, v_unit
+FROM items WHERE id = NEW.item_id;
+IF v_qty IS NOT NULL AND v_step IS NOT NULL AND (v_qty % v_step) <> 0 THEN
+    RAISE EXCEPTION '% can only be handled in steps of % % (got %).',
+                    v_name, v_step, v_unit, v_qty;
+END IF;
+RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_step_sale_items ON sale_items;
+CREATE TRIGGER trg_step_sale_items
+    BEFORE INSERT ON sale_items
+    FOR EACH ROW EXECUTE FUNCTION fn_enforce_quantity_step('quantity');
+
+DROP TRIGGER IF EXISTS trg_step_inventory ON inventory;
+CREATE TRIGGER trg_step_inventory
+    BEFORE INSERT ON inventory
+    FOR EACH ROW EXECUTE FUNCTION fn_enforce_quantity_step('quantity_received');
+
+-- 5. Keep subtotals honest when prices are per small unit ----------------------
+-- create_sale already writes subtotal = quantity * unit_price. Both are
+-- 2-decimal, so the product can have 4 decimals; the column rounds it to 2.
+-- Nothing to change. Just be aware that a price like 4.1667/g is stored as 4.17.
+
+-- 6. Examples (edit names; run by hand if you want them) -----------------------
+-- UPDATE items SET unit = 'ml'  WHERE name ILIKE '%SYRUP%';
+-- UPDATE items SET unit = 'g', quantity_step = 1 WHERE name ILIKE '%POWDER%';
+-- INSERT INTO item_units (item_id, unit_name, factor)
+--   SELECT id, 'bottle', 100 FROM items WHERE name = 'PARACETAMOL SYRUP 100ML';
+--
+-- IMPORTANT: if an item already has stock counted in bottles, convert that
+-- stock and its prices when you change its unit, e.g. for a 100 ml bottle:
+--   UPDATE inventory SET quantity_received  = quantity_received  * 100,
+--                        quantity_available = quantity_available * 100,
+--                        buying_price   = buying_price   / 100,
+--                        retail_price   = retail_price   / 100,
+--                        wholesale_price = wholesale_price / 100
+--   WHERE item_id = '<item id>';
+-- (past sale_items / stock_movements stay as history in the old unit.)
+
+NOTIFY pgrst, 'reload schema';
+
+       -- ============================================================================
+-- FRACTIONAL QUANTITIES — PART 2
+-- Run AFTER fractional_quantities.sql. Safe to re-run.
+--   1. get_receipt() now returns each line's unit (receipts print "50 ml").
+--   2. admin_convert_item_unit(): safely switches an item that already has
+--      stock to a smaller base unit (bottle -> ml, kg -> g, box -> tablet),
+--      converting stock quantities, buying/selling prices and reorder level
+--      in one transaction, and remembering the old unit as a conversion.
+-- ============================================================================
+
+-- 1. Receipt with units ----------------------------------------------------------
+CREATE OR REPLACE FUNCTION get_receipt(p_sale_id uuid) RETURNS jsonb
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+DECLARE r jsonb;
+BEGIN
+SELECT jsonb_build_object(
+               'sale_id',         s.id,
+               'receipt_number',  s.receipt_number,
+               'sale_date',       s.sale_date AT TIME ZONE 'Africa/Blantyre',
+               'branch_name',     b.name,
+               'branch_location', b.location,
+               'branch_phone',    b.phone,
+               'cashier_name',    u.full_name,
+               'customer_name',   c.name,
+               'sale_type',       s.sale_type,
+               'payment_method',  s.payment_method,
+               'payment_status',  s.payment_status,
+               'total_amount',    s.total_amount,
+               'amount_paid',     s.amount_paid,
+               'balance_due',     s.total_amount - s.amount_paid,
+               'items', COALESCE((
+                                     SELECT jsonb_agg(jsonb_build_object(
+                                                              'name', i.name, 'unit', i.unit,
+                                                              'quantity', si.quantity,
+                                                              'unit_price', si.unit_price, 'subtotal', si.subtotal)
+                                                          ORDER BY i.name, si.id)
+                                     FROM sale_items si JOIN items i ON i.id = si.item_id
+                                     WHERE si.sale_id = s.id), '[]'::jsonb)
+       ) INTO r
+FROM sales s
+         JOIN branches b ON b.id = s.branch_id
+         LEFT JOIN users u ON u.id = s.cashier_id
+         LEFT JOIN customers c ON c.id = s.customer_id
+WHERE s.id = p_sale_id
+  AND (is_admin() OR s.branch_id = user_branch_id());
+
+IF r IS NULL THEN RAISE EXCEPTION 'Receipt not found.'; END IF;
+RETURN r;
+END;
+$$;
+
+-- 2. Convert an item that already has stock to a smaller base unit ----------------
+-- p_factor = how many NEW base units are in ONE OLD unit.
+--   Syrup counted in bottles of 100 ml:  admin_convert_item_unit(id, 'ml', 100)
+--   Sugar counted in kg:                 admin_convert_item_unit(id, 'g', 1000)
+--   Tablets counted in boxes of 100:     admin_convert_item_unit(id, 'tablet', 100)
+-- Past sales / movements stay as history in the old unit.
+CREATE OR REPLACE FUNCTION admin_convert_item_unit(
+    p_item_id uuid, p_new_unit text, p_factor numeric, p_step numeric DEFAULT 1
+) RETURNS void
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+DECLARE
+v_old text;
+  v_bad int;
+BEGIN
+  IF NOT is_admin() THEN RAISE EXCEPTION 'Only admins can change an item''s unit.'; END IF;
+  IF p_factor IS NULL OR p_factor <= 0 THEN RAISE EXCEPTION 'The conversion must be above zero.'; END IF;
+  IF p_step IS NULL OR p_step <= 0 THEN RAISE EXCEPTION 'The smallest sale step must be above zero.'; END IF;
+  IF trim(COALESCE(p_new_unit, '')) = '' THEN RAISE EXCEPTION 'Enter the new unit name.'; END IF;
+
+SELECT unit INTO v_old FROM items WHERE id = p_item_id FOR UPDATE;
+IF v_old IS NULL THEN RAISE EXCEPTION 'Item not found.'; END IF;
+  IF lower(trim(v_old)) = lower(trim(p_new_unit)) THEN
+    RAISE EXCEPTION 'The item is already counted in %.', v_old;
+END IF;
+
+  -- Prices are stored to 2 decimals. Refuse if splitting would distort any
+  -- price by more than 1% (e.g. MK 1 per box of 300 would become 0.00).
+SELECT count(*) INTO v_bad FROM inventory
+WHERE item_id = p_item_id
+  AND ((retail_price   > 0 AND abs(round(retail_price   / p_factor, 2) * p_factor - retail_price)   / retail_price   > 0.01)
+    OR (buying_price   > 0 AND abs(round(buying_price   / p_factor, 2) * p_factor - buying_price)   / buying_price   > 0.01)
+    OR (wholesale_price > 0 AND abs(round(wholesale_price / p_factor, 2) * p_factor - wholesale_price) / wholesale_price > 0.01));
+IF v_bad > 0 THEN
+    RAISE EXCEPTION 'Some prices are too small to split into % without losing accuracy.', p_new_unit;
+END IF;
+
+UPDATE inventory SET
+                     quantity_received  = quantity_received  * p_factor,
+                     quantity_available = quantity_available * p_factor,
+                     buying_price       = round(buying_price   / p_factor, 2),
+                     retail_price       = round(retail_price   / p_factor, 2),
+                     wholesale_price    = round(wholesale_price / p_factor, 2)
+WHERE item_id = p_item_id;
+
+UPDATE items SET
+                 unit          = trim(p_new_unit),
+                 reorder_level = reorder_level * p_factor,
+                 quantity_step = p_step
+WHERE id = p_item_id;
+
+-- Remember the old unit so staff can still receive "5 bottles".
+DELETE FROM item_units WHERE item_id = p_item_id AND lower(trim(unit_name)) = lower(trim(v_old));
+INSERT INTO item_units (item_id, unit_name, factor) VALUES (p_item_id, trim(v_old), p_factor);
+END;
+$$;
+
+REVOKE ALL ON FUNCTION admin_convert_item_unit(uuid, text, numeric, numeric) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION admin_convert_item_unit(uuid, text, numeric, numeric) TO authenticated;
+
+NOTIFY pgrst, 'reload schema';
+
+       -- ============================================================================
+-- FRACTIONAL QUANTITIES + UNITS: apply to create_sale, receive_stock_delivery
+-- Run in Supabase SQL editor. Safe to re-run (CREATE OR REPLACE + IF EXISTS).
+-- ============================================================================
+
+-- 1. create_sale: read "unit" per line, convert to base units, store unit ----
+CREATE OR REPLACE FUNCTION create_sale(
+    p_lines          jsonb,
+    p_sale_type      sale_type      DEFAULT 'retail',
+    p_payment_method payment_method DEFAULT 'cash',
+    p_customer_id    uuid           DEFAULT NULL,
+    p_amount_paid    numeric        DEFAULT 0,
+    p_paid_method    payment_method DEFAULT 'cash',
+    p_branch_id      uuid           DEFAULT NULL
+) RETURNS jsonb
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+DECLARE
+v_uid       uuid := auth.uid();
+    v_today     date := (now() AT TIME ZONE 'Africa/Blantyre')::date;
+    v_role      user_role;
+    v_branch    uuid;
+    v_prefix    text;
+    v_sale_id   uuid;
+    v_line      record;
+    v_batch     record;
+    v_item_name text;
+    v_remaining numeric;
+    v_take      numeric;
+    v_price     numeric;
+    v_total     numeric;
+BEGIN
+SELECT role, branch_id INTO v_role, v_branch FROM users WHERE id = v_uid AND is_active;
+IF v_role IS NULL THEN RAISE EXCEPTION 'Your account is not active.'; END IF;
+    IF v_role = 'admin' THEN
+        v_branch := p_branch_id;
+        IF v_branch IS NULL THEN RAISE EXCEPTION 'Choose a branch to sell from.'; END IF;
+    ELSIF v_role NOT IN ('cashier', 'manager') THEN
+        RAISE EXCEPTION 'Your role cannot record sales.';
+END IF;
+    IF NOT EXISTS (SELECT 1 FROM branches WHERE id = v_branch AND is_active) THEN
+        RAISE EXCEPTION 'Branch not found or inactive.';
+END IF;
+
+    IF p_lines IS NULL OR jsonb_typeof(p_lines) <> 'array' OR jsonb_array_length(p_lines) = 0 THEN
+        RAISE EXCEPTION 'Add at least one item to the sale.';
+END IF;
+    IF p_payment_method = 'credit' AND p_customer_id IS NULL THEN
+        RAISE EXCEPTION 'A customer is required for credit sales.';
+END IF;
+    IF p_customer_id IS NOT NULL AND NOT EXISTS (
+        SELECT 1 FROM customers WHERE id = p_customer_id
+           AND (branch_id IS NULL OR branch_id = v_branch)) THEN
+        RAISE EXCEPTION 'Customer not found at this branch.';
+END IF;
+
+SELECT upper(left(regexp_replace(name, '[^A-Za-z]', '', 'g'), 3))
+INTO v_prefix FROM branches WHERE id = v_branch;
+INSERT INTO sales (branch_id, customer_id, cashier_id, sale_type, payment_method,
+                   payment_status, receipt_number)
+VALUES (v_branch, p_customer_id, v_uid, p_sale_type, p_payment_method,
+        CASE WHEN p_payment_method = 'credit'
+                 THEN 'pending'::payment_status ELSE 'paid'::payment_status END,
+        COALESCE(NULLIF(v_prefix, ''), 'RCT') || '-' || lpad(nextval('receipt_seq')::text, 6, '0'))
+    RETURNING id INTO v_sale_id;
+
+-- Each line may carry a "unit" (e.g. "bottle"); convert to base units.
+FOR v_line IN
+SELECT (l->>'item_id')::uuid AS item_id,
+    SUM((l->>'quantity')::numeric) AS qty,
+       COALESCE(NULLIF(l->>'unit', ''), NULL) AS unit_name
+FROM jsonb_array_elements(p_lines) AS l
+GROUP BY 1, 3 ORDER BY 1
+    LOOP
+        IF v_line.qty <= 0 THEN RAISE EXCEPTION 'Quantities must be greater than zero.'; END IF;
+
+SELECT name INTO v_item_name FROM items WHERE id = v_line.item_id AND is_active;
+IF v_item_name IS NULL THEN RAISE EXCEPTION 'An item in this sale is missing or discontinued.'; END IF;
+
+        -- Convert to the item's base unit (inventory is always counted in base).
+        v_remaining := to_base_qty(v_line.item_id, COALESCE(v_line.unit_name, ''), v_line.qty);
+
+FOR v_batch IN
+SELECT id, buying_price, retail_price, wholesale_price, quantity_available
+FROM inventory
+WHERE branch_id = v_branch AND item_id = v_line.item_id
+  AND quantity_available > 0
+  AND (expiry_date IS NULL OR expiry_date >= v_today)
+ORDER BY expiry_date ASC NULLS LAST, received_date ASC, created_at ASC
+    FOR UPDATE
+    LOOP
+            EXIT WHEN v_remaining <= 0;
+v_take  := LEAST(v_remaining, v_batch.quantity_available);
+            v_price := CASE WHEN p_sale_type = 'wholesale'
+                            THEN COALESCE(v_batch.wholesale_price, v_batch.retail_price)
+                            ELSE v_batch.retail_price END;
+
+INSERT INTO sale_items (sale_id, item_id, inventory_id, quantity,
+                        unit_price, unit_cost, subtotal, unit)
+VALUES (v_sale_id, v_line.item_id, v_batch.id, v_take,
+        v_price, v_batch.buying_price, v_take * v_price, v_line.unit_name);
+
+UPDATE inventory SET quantity_available = quantity_available - v_take
+WHERE id = v_batch.id;
+
+INSERT INTO stock_movements (branch_id, item_id, inventory_id, movement_type,
+                             quantity, reference_table, reference_id, performed_by)
+VALUES (v_branch, v_line.item_id, v_batch.id, 'sale_out',
+        v_take, 'sales', v_sale_id, v_uid);
+
+v_remaining := v_remaining - v_take;
+END LOOP;
+
+        IF v_remaining > 0 THEN
+            RAISE EXCEPTION 'Not enough stock for %: only % available.',
+                            v_item_name, v_line.qty - v_remaining;
+END IF;
+END LOOP;
+
+SELECT total_amount INTO v_total FROM sales WHERE id = v_sale_id;
+
+IF p_payment_method = 'credit' THEN
+        IF COALESCE(p_amount_paid, 0) < 0 OR COALESCE(p_amount_paid, 0) > v_total THEN
+            RAISE EXCEPTION 'Amount paid now must be between 0 and the sale total.';
+END IF;
+        IF COALESCE(p_amount_paid, 0) > 0 THEN
+            IF p_paid_method = 'credit' THEN
+                RAISE EXCEPTION 'Choose how the part-payment was made (cash, mobile money or card).';
+END IF;
+INSERT INTO payments (branch_id, customer_id, sale_id, amount, payment_method,
+                      recorded_by, notes)
+VALUES (v_branch, p_customer_id, v_sale_id, p_amount_paid, p_paid_method,
+        v_uid, 'Part-payment at time of sale');
+END IF;
+ELSE
+UPDATE sales SET amount_paid = total_amount WHERE id = v_sale_id;
+END IF;
+
+RETURN get_receipt(v_sale_id);
+END;
+$$;
+
+
+-- 2. receive_stock_delivery: convert "unit" per line to base units -----------
+CREATE OR REPLACE FUNCTION receive_stock_delivery(
+    p_branch_id uuid,
+    p_supplier_id uuid DEFAULT NULL,
+    p_invoice_number text DEFAULT NULL,
+    p_purchase_date date DEFAULT current_date,
+    p_lines jsonb DEFAULT '[]'::jsonb
+) RETURNS uuid
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+DECLARE
+v_uid uuid := auth.uid();
+    v_role user_role;
+    v_user_branch uuid;
+    v_purchase_id uuid;
+    v_line jsonb;
+    v_item_id uuid;
+    v_inventory_id uuid;
+    v_qty numeric;
+    v_buying numeric;
+    v_retail numeric;
+    v_wholesale numeric;
+    v_expiry date;
+    v_batch text;
+BEGIN
+SELECT role, branch_id INTO v_role, v_user_branch
+FROM users WHERE id = v_uid AND is_active;
+IF v_role IS NULL THEN RAISE EXCEPTION 'Your account is not active.'; END IF;
+    IF p_branch_id IS NULL THEN RAISE EXCEPTION 'Choose a branch.'; END IF;
+    IF v_role = 'cashier' THEN
+        IF v_user_branch IS DISTINCT FROM p_branch_id OR NOT has_stock_access() THEN
+            RAISE EXCEPTION 'Active stock access is required to receive stock at your branch.';
+END IF;
+    ELSIF v_role NOT IN ('admin', 'manager', 'stock_controller') THEN
+        RAISE EXCEPTION 'Your role cannot receive stock.';
+END IF;
+    IF NOT EXISTS (SELECT 1 FROM branches WHERE id = p_branch_id AND is_active) THEN
+        RAISE EXCEPTION 'Branch not found or inactive.';
+END IF;
+    IF jsonb_typeof(p_lines) <> 'array' OR jsonb_array_length(p_lines) = 0 THEN
+        RAISE EXCEPTION 'Add at least one delivery line.';
+END IF;
+    IF p_supplier_id IS NOT NULL AND NOT EXISTS (
+        SELECT 1 FROM suppliers WHERE id = p_supplier_id AND is_active
+    ) THEN
+        RAISE EXCEPTION 'Supplier not found or inactive.';
+END IF;
+
+INSERT INTO purchases (branch_id, supplier_id, invoice_number, payment_status,
+                       purchase_date, created_by)
+VALUES (p_branch_id, p_supplier_id, NULLIF(trim(p_invoice_number), ''),
+        CASE WHEN p_supplier_id IS NULL THEN 'paid'::payment_status
+             ELSE 'pending'::payment_status END,
+        COALESCE(p_purchase_date, current_date), v_uid)
+    RETURNING id INTO v_purchase_id;
+
+FOR v_line IN SELECT value FROM jsonb_array_elements(p_lines)
+                                    LOOP
+    v_item_id := (v_line->>'item_id')::uuid;
+v_qty := (v_line->>'quantity')::numeric;
+        v_buying := (v_line->>'buying_price')::numeric;
+        v_retail := (v_line->>'retail_price')::numeric;
+        v_wholesale := NULLIF(v_line->>'wholesale_price', '')::numeric;
+        v_expiry := NULLIF(v_line->>'expiry_date', '')::date;
+        v_batch := NULLIF(trim(v_line->>'batch_number'), '');
+
+        IF v_qty IS NULL OR v_qty <= 0 OR v_buying IS NULL OR v_buying < 0
+           OR v_retail IS NULL OR v_retail < 0 THEN
+            RAISE EXCEPTION 'Each delivery line needs valid quantity and prices.';
+END IF;
+        IF v_wholesale IS NOT NULL AND v_wholesale < 0 THEN
+            RAISE EXCEPTION 'Wholesale prices cannot be negative.';
+END IF;
+        IF v_expiry IS NOT NULL AND v_expiry < current_date THEN
+            RAISE EXCEPTION 'Expiry dates cannot be in the past.';
+END IF;
+        IF NOT EXISTS (SELECT 1 FROM items WHERE id = v_item_id AND is_active) THEN
+            RAISE EXCEPTION 'An item is missing or discontinued.';
+END IF;
+
+        -- A bigger unit ("2 bottles") converts to base units ("200 ml").
+        -- Prices are per base unit and must NOT be scaled.
+        v_qty := to_base_qty(v_item_id, COALESCE(NULLIF(trim(v_line->>'unit'), ''), ''), v_qty);
+
+INSERT INTO inventory (item_id, branch_id, batch_number, buying_price, retail_price,
+                       wholesale_price, quantity_received, quantity_available,
+                       expiry_date, received_date, created_by)
+VALUES (v_item_id, p_branch_id, v_batch, v_buying, v_retail,
+        v_wholesale, v_qty, v_qty, v_expiry,
+        COALESCE(p_purchase_date, current_date), v_uid)
+    RETURNING id INTO v_inventory_id;
+
+INSERT INTO purchase_items (purchase_id, item_id, inventory_id, quantity, unit_cost, subtotal)
+VALUES (v_purchase_id, v_item_id, v_inventory_id, v_qty, v_buying, v_qty * v_buying);
+
+INSERT INTO stock_movements (branch_id, item_id, inventory_id, movement_type, quantity,
+                             reference_table, reference_id, performed_by, notes)
+VALUES (p_branch_id, v_item_id, v_inventory_id, 'purchase_in', v_qty,
+        'purchases', v_purchase_id, v_uid, 'Received delivery');
+END LOOP;
+RETURN v_purchase_id;
+END;
+$$;
+
+
+NOTIFY pgrst, 'reload schema';
+

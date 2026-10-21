@@ -1,5 +1,7 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../../core/quantityUnit.dart';
+
 // ============================================================================
 // ADMIN INVENTORY — REPOSITORY (oversight, not data entry)
 //   Reads: branches, items, inventory (+ embeds), v_low_stock,
@@ -229,6 +231,8 @@ class CatalogItem {
   final bool isActive;
   final String businessTypeId;
   final String businessTypeName;
+  final double quantityStep;
+  final List<QtyUnit> units;
 
   const CatalogItem({
     required this.id,
@@ -240,6 +244,8 @@ class CatalogItem {
     required this.isActive,
     this.businessTypeId = '',
     this.businessTypeName = 'Pharmacy',
+    this.quantityStep = 1,
+    this.units = const [],
   });
 }
 
@@ -504,7 +510,7 @@ class InventoryRepository {
     dynamic q = _client
         .from('items')
         .select(
-          'id, name, category, unit, reorder_level, requires_prescription, is_active, business_type_id, business_types(name)',
+          'id, name, category, unit, reorder_level, requires_prescription, is_active, business_type_id, business_types(name), quantity_step, item_units(unit_name, factor)',
         );
     if (!includeInactive) q = q.eq('is_active', true);
     final rows = await q.order('name').limit(2000) as List;
@@ -526,6 +532,8 @@ class InventoryRepository {
               isActive: (r['is_active'] as bool?) ?? true,
               businessTypeId: (r['business_type_id'] as String?) ?? '',
               businessTypeName: btName,
+              quantityStep: ((r['quantity_step'] as num?) ?? 1).toDouble(),
+              units: parseQtyUnits(r['item_units']),
             );
           },
         )
@@ -706,13 +714,14 @@ class InventoryRepository {
     }
   }
 
-  Future<void> createItem({
+  Future<String> createItem({
     required String name,
     required String category,
     required String unit,
     required double reorderLevel,
     required bool requiresPrescription,
     required String businessTypeId,
+    double quantityStep = 1,
   }) async {
     if (name.trim().isEmpty) {
       throw const InventoryException('Item name is required.');
@@ -720,14 +729,16 @@ class InventoryRepository {
     if (businessTypeId.trim().isEmpty) {
       throw const InventoryException('Business type is required.');
     }
-    await _client.from('items').insert({
+    final res = await _client.from('items').insert({
       'name': name.trim(),
       'category': category.trim().isEmpty ? null : category.trim(),
       'unit': unit.trim().isEmpty ? 'unit' : unit.trim(),
       'reorder_level': reorderLevel,
       'requires_prescription': requiresPrescription,
       'business_type_id': businessTypeId,
-    });
+      'quantity_step': quantityStep,
+    }).select('id').single();
+    return res['id'] as String;
   }
 
   Future<void> updateItem({
@@ -738,6 +749,7 @@ class InventoryRepository {
     required double reorderLevel,
     required bool requiresPrescription,
     required String businessTypeId,
+    double quantityStep = 1,
   }) async {
     if (name.trim().isEmpty) {
       throw const InventoryException('Item name is required.');
@@ -754,8 +766,47 @@ class InventoryRepository {
           'reorder_level': reorderLevel,
           'requires_prescription': requiresPrescription,
           'business_type_id': businessTypeId,
+          'quantity_step': quantityStep,
         })
         .eq('id', id);
+  }
+
+  /// Replaces all extra units for an item (bottle, box, kg...).
+  /// [units] are QtyUnit(name, factor) where factor = how many base units
+  /// one of these contains.
+  Future<void> saveItemUnits(String itemId, List<QtyUnit> units) async {
+    await _client.from('item_units').delete().eq('item_id', itemId);
+    if (units.isNotEmpty) {
+      await _client.from('item_units').insert([
+        for (final u in units)
+          {
+            'item_id': itemId,
+            'unit_name': u.name.trim(),
+            'factor': u.factor,
+          }
+      ]);
+    }
+  }
+
+  /// Switches an item that already has stock to a smaller base unit
+  /// (e.g. bottle -> ml, kg -> g, box -> tablet), converting stock quantities,
+  /// buying/selling prices, and reorder level in one atomic database call.
+  Future<void> convertItemUnit({
+    required String itemId,
+    required String newUnit,
+    required double factor,
+    double step = 1,
+  }) async {
+    try {
+      await _client.rpc('admin_convert_item_unit', params: {
+        'p_item_id': itemId,
+        'p_new_unit': newUnit.trim(),
+        'p_factor': factor,
+        'p_step': step,
+      });
+    } on PostgrestException catch (e) {
+      throw InventoryException(e.message);
+    }
   }
 
   Future<void> setItemActive(String id, bool active) async {

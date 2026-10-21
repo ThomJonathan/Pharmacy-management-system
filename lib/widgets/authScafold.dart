@@ -65,7 +65,7 @@ class AuthScaffold extends StatelessWidget {
                               const Spacer(),
                               const SizedBox(height: 32),
                               Text(
-                                'Tumaini Investments',
+                                'Stocka',
                                 style: GoogleFonts.ibmPlexSans(
                                   fontSize: 30,
                                   fontWeight: FontWeight.w700,

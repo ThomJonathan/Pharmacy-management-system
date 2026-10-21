@@ -5,6 +5,7 @@ import 'package:file_saver/file_saver.dart';
 import 'package:flutter/material.dart';
 
 import '../../core/downloads.dart';
+import '../../core/quantityUnit.dart';
 import '../../widgets/adminShell.dart';
 import 'adminui.dart';
 import 'inventoryRepo.dart';
@@ -2120,7 +2121,7 @@ class _CatalogTab extends StatelessWidget {
                         ),
                         const SizedBox(height: 2),
                         Text(
-                          '${c.businessTypeName} · ${c.category} · ${c.unit} · reorder at ${_fmtQty(c.reorderLevel)}',
+                          '${c.businessTypeName} · ${c.category} · ${c.unit}${c.quantityStep != 1 ? ' · step ${fmtQty(c.quantityStep)}' : ''}${c.units.isNotEmpty ? ' · extra: ${c.units.map((u) => '${u.name} (${fmtQty(u.factor)})').join(', ')}' : ''} · reorder at ${_fmtQty(c.reorderLevel)}',
                           style: sans(11.5, color: kInkMuted),
                         ),
                       ],
@@ -2311,6 +2312,7 @@ class _AddStockSheetState extends State<_AddStockSheet> {
   final _batchCtrl = TextEditingController();
   String? _branchId;
   String? _itemId;
+  String? _selectedUnit;
   DateTime? _expiryDate;
   bool _saving = false;
   String? _error;
@@ -2356,6 +2358,28 @@ class _AddStockSheetState extends State<_AddStockSheet> {
       );
       return;
     }
+
+    final selectedItem = widget.items.cast<CatalogItem?>().firstWhere(
+      (it) => it?.id == _itemId,
+      orElse: () => null,
+    );
+    final unitName = _selectedUnit ?? selectedItem?.unit ?? 'unit';
+    final factor = selectedItem == null
+        ? 1.0
+        : factorFor(unitName, selectedItem.unit, selectedItem.units);
+    final baseQty = roundQty(quantity * factor);
+    final baseBuy = pricePerBase(buying, factor) ?? (buying / factor);
+    final baseRetail = pricePerBase(retail, factor) ?? (retail / factor);
+    final baseWhole = wholesale != null
+        ? (pricePerBase(wholesale, factor) ?? (wholesale / factor))
+        : null;
+
+    if (selectedItem != null && !onStep(baseQty, selectedItem.quantityStep)) {
+      setState(() => _error =
+          'Quantity in ${selectedItem.unit} must be a multiple of ${fmtQty(selectedItem.quantityStep)}.');
+      return;
+    }
+
     setState(() {
       _saving = true;
       _error = null;
@@ -2364,10 +2388,10 @@ class _AddStockSheetState extends State<_AddStockSheet> {
       await widget.repo.addStock(
         branchId: _branchId!,
         itemId: _itemId!,
-        quantity: quantity,
-        buyingPrice: buying,
-        retailPrice: retail,
-        wholesalePrice: wholesale,
+        quantity: baseQty,
+        buyingPrice: baseBuy,
+        retailPrice: baseRetail,
+        wholesalePrice: baseWhole,
         batchNumber: _batchCtrl.text,
         expiryDate: _expiryDate,
       );
@@ -2421,8 +2445,45 @@ class _AddStockSheetState extends State<_AddStockSheet> {
                 .toList(),
             onChanged: _saving
                 ? null
-                : (value) => setState(() => _itemId = value),
+                : (value) {
+                    final it = widget.items.cast<CatalogItem?>().firstWhere(
+                          (i) => i?.id == value,
+                          orElse: () => null,
+                        );
+                    setState(() {
+                      _itemId = value;
+                      _selectedUnit = it?.unit;
+                    });
+                  },
           ),
+          if (_itemId != null) ...[
+            Builder(builder: (context) {
+              final it = widget.items.cast<CatalogItem?>().firstWhere(
+                    (i) => i?.id == _itemId,
+                    orElse: () => null,
+                  );
+              if (it == null || it.units.isEmpty) return const SizedBox.shrink();
+              return Padding(
+                padding: const EdgeInsets.only(top: 12),
+                child: DropdownButtonFormField<String>(
+                  initialValue: _selectedUnit ?? it.unit,
+                  decoration: fieldDecoration('Receiving unit'),
+                  items: [
+                    DropdownMenuItem(
+                      value: it.unit,
+                      child: Text('${it.unit} (base unit)'),
+                    ),
+                    for (final u in it.units)
+                      DropdownMenuItem(
+                        value: u.name,
+                        child: Text('${u.name} (= ${fmtQty(u.factor)} ${it.unit})'),
+                      ),
+                  ],
+                  onChanged: _saving ? null : (v) => setState(() => _selectedUnit = v),
+                ),
+              );
+            }),
+          ],
           const SizedBox(height: 12),
           Row(
             children: [
@@ -2683,13 +2744,15 @@ class _PriceSheet extends StatefulWidget {
 
 class _PriceSheetState extends State<_PriceSheet> {
   late final TextEditingController _buy = TextEditingController(
-    text: widget.batch.buyingPrice.toStringAsFixed(0),
+    text: fmtQty(widget.batch.buyingPrice),
   );
   late final TextEditingController _retail = TextEditingController(
-    text: widget.batch.retailPrice.toStringAsFixed(0),
+    text: fmtQty(widget.batch.retailPrice),
   );
   late final TextEditingController _whole = TextEditingController(
-    text: widget.batch.wholesalePrice?.toStringAsFixed(0) ?? '',
+    text: widget.batch.wholesalePrice != null
+        ? fmtQty(widget.batch.wholesalePrice!)
+        : '',
   );
   bool _saving = false;
   String? _formError;
@@ -2831,11 +2894,25 @@ class _ItemFormSheetState extends State<_ItemFormSheet> {
     text: widget.item?.unit ?? 'unit',
   );
   late final TextEditingController _reorder = TextEditingController(
-    text: (widget.item?.reorderLevel ?? 10).toStringAsFixed(0),
+    text: fmtQty(widget.item?.reorderLevel ?? 10),
+  );
+  late final TextEditingController _step = TextEditingController(
+    text: fmtQty(widget.item?.quantityStep ?? 1),
   );
   late bool _rx = widget.item?.requiresPrescription ?? false;
   late List<BusinessTypeOption> _types = List.from(widget.businessTypes);
   String? _businessTypeId;
+
+  // Extra units (bottle, box, kg...) — each row is name + factor (how many
+  // base units one of these contains).
+  late final List<_UnitRowForm> _unitRows = [
+    if (widget.item != null)
+      for (final u in widget.item!.units)
+        _UnitRowForm(
+          nameCtrl: TextEditingController(text: u.name),
+          factorCtrl: TextEditingController(text: fmtQty(u.factor)),
+        ),
+  ];
 
   bool _saving = false;
   String? _formError;
@@ -2872,6 +2949,10 @@ class _ItemFormSheetState extends State<_ItemFormSheet> {
     _category.dispose();
     _unit.dispose();
     _reorder.dispose();
+    _step.dispose();
+    for (final r in _unitRows) {
+      r.dispose();
+    }
     super.dispose();
   }
 
@@ -2888,6 +2969,30 @@ class _ItemFormSheetState extends State<_ItemFormSheet> {
     if (reorder == null || reorder < 0) {
       setState(() => _formError = 'Reorder level must be zero or above.');
       return;
+    }
+    final step = double.tryParse(_step.text.trim());
+    if (step == null || step <= 0) {
+      setState(() => _formError = 'Smallest sale step must be above zero.');
+      return;
+    }
+    // Validate extra units: each needs a name and factor > 0, no duplicates,
+    // and none may equal the base unit.
+    final units = <QtyUnit>[];
+    final seen = <String>{};
+    final baseUnit = _unit.text.trim().isEmpty ? 'unit' : _unit.text.trim();
+    for (final r in _unitRows) {
+      final n = r.nameCtrl.text.trim();
+      final f = double.tryParse(r.factorCtrl.text.trim());
+      if (n.isEmpty && r.factorCtrl.text.trim().isEmpty) continue;
+      if (n.isEmpty || f == null || f <= 0) {
+        setState(() => _formError = 'Each extra unit needs a name and a number above zero.');
+        return;
+      }
+      if (n.toLowerCase() == baseUnit.toLowerCase() || !seen.add(n.toLowerCase())) {
+        setState(() => _formError = '"$n" is repeated or equals the base unit.');
+        return;
+      }
+      units.add(QtyUnit(n, f));
     }
     // Duplicate guard: same name (case-insensitive) already catalogued.
     // Same unit means it is the same item — blocked, no override.
@@ -2935,26 +3040,31 @@ class _ItemFormSheetState extends State<_ItemFormSheet> {
       _formError = null;
     });
     try {
+      String itemId;
       if (widget.item == null) {
-        await widget.repo.createItem(
+        itemId = await widget.repo.createItem(
           name: _name.text,
           category: _category.text,
           unit: _unit.text,
           reorderLevel: reorder,
           requiresPrescription: _rx,
           businessTypeId: _businessTypeId!,
+          quantityStep: step,
         );
       } else {
+        itemId = widget.item!.id;
         await widget.repo.updateItem(
-          id: widget.item!.id,
+          id: itemId,
           name: _name.text,
           category: _category.text,
           unit: _unit.text,
           reorderLevel: reorder,
           requiresPrescription: _rx,
           businessTypeId: _businessTypeId!,
+          quantityStep: step,
         );
       }
+      await widget.repo.saveItemUnits(itemId, units);
       if (mounted) {
         Navigator.of(context)
             .pop(widget.item == null ? 'Item added.' : 'Item updated.');
@@ -3037,6 +3147,31 @@ class _ItemFormSheetState extends State<_ItemFormSheet> {
             ],
           ),
           const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _step,
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                  ),
+                  style: sans(14, color: kInk),
+                  decoration: fieldDecoration(
+                    'Smallest sale step',
+                    hint: 'e.g. 1, 0.5, 0.25',
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  'Cashiers can only sell in multiples of this many base units.',
+                  style: sans(11.5, color: kInkMuted),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
           SwitchListTile(
             value: _rx,
             onChanged: (v) => setState(() => _rx = v),
@@ -3047,6 +3182,62 @@ class _ItemFormSheetState extends State<_ItemFormSheet> {
             activeThumbColor: kPrimary,
             contentPadding: EdgeInsets.zero,
           ),
+          // ---- Extra units (bottle, box, kg...) ----
+          if (_unitRows.isNotEmpty || widget.item == null) ...[
+            const SizedBox(height: 12),
+            Text(
+              'Extra units (optional)',
+              style: sans(13, weight: FontWeight.w600, color: kInk),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Bigger units cashiers can pick instead of the base unit.',
+              style: sans(11.5, color: kInkMuted),
+            ),
+            const SizedBox(height: 8),
+            for (int i = 0; i < _unitRows.length; i++) ...[
+              _unitRowWidget(i, _unitRows[i]),
+              const SizedBox(height: 8),
+            ],
+            OutlinedButton.icon(
+              onPressed: () => setState(() => _unitRows.add(_UnitRowForm())),
+              style: outlineButtonStyle(height: 40),
+              icon: const Icon(Icons.add, size: 16),
+              label: const Text('Add unit'),
+            ),
+          ],
+          if (widget.item != null) ...[
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: kSurface,
+                borderRadius: BorderRadius.circular(4),
+                border: Border.all(color: kBorder),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Need to split existing stock into a smaller unit?',
+                    style: sans(12.5, weight: FontWeight.w600, color: kInk),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    'e.g. bottle to ml, or kg to g. Existing batches and prices convert automatically.',
+                    style: sans(11.5, color: kInkMuted),
+                  ),
+                  const SizedBox(height: 8),
+                  OutlinedButton.icon(
+                    onPressed: _saving ? null : _promptConvertUnit,
+                    style: outlineButtonStyle(height: 36),
+                    icon: const Icon(Icons.transform, size: 15),
+                    label: const Text('Convert base unit'),
+                  ),
+                ],
+              ),
+            ),
+          ],
           if (_formError != null) ...[
             const SizedBox(height: 6),
             Text(
@@ -3072,5 +3263,146 @@ class _ItemFormSheetState extends State<_ItemFormSheet> {
         ],
       ),
     );
+  }
+
+  Widget _unitRowWidget(int i, _UnitRowForm r) {
+    return Row(
+      children: [
+        Expanded(
+          child: TextField(
+            controller: r.nameCtrl,
+            style: sans(13.5, color: kInk),
+            decoration: fieldDecoration('Unit name', hint: 'bottle, box, kg'),
+          ),
+        ),
+        const SizedBox(width: 8),
+        SizedBox(
+          width: 100,
+          child: TextField(
+            controller: r.factorCtrl,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            style: sans(13.5, color: kInk),
+            decoration: fieldDecoration('= base units'),
+          ),
+        ),
+        IconButton(
+          icon: const Icon(Icons.close, size: 18, color: kInkMuted),
+          onPressed: () => setState(() {
+            r.dispose();
+            _unitRows.removeAt(i);
+          }),
+          visualDensity: VisualDensity.compact,
+        ),
+      ],
+    );
+  }
+
+  Future<void> _promptConvertUnit() async {
+    final item = widget.item;
+    if (item == null) return;
+    final newUnitCtrl = TextEditingController();
+    final factorCtrl = TextEditingController(text: '100');
+    final stepCtrl = TextEditingController(text: '1');
+    String? error;
+
+    await showAdaptiveSheet<bool>(
+      context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDlg) {
+          return SheetFrame(
+            title: 'Convert base unit',
+            subtitle: 'Splits "${item.name}" into a smaller unit. Existing stock and prices will adjust automatically.',
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  'Current unit: ${item.unit}',
+                  style: sans(13, weight: FontWeight.w600, color: kInk),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: newUnitCtrl,
+                  style: sans(14, color: kInk),
+                  decoration: fieldDecoration('New base unit name', hint: 'e.g. ml, g, tablet'),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: factorCtrl,
+                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  style: sans(14, color: kInk),
+                  decoration: fieldDecoration(
+                    'How many new units in 1 ${item.unit}?',
+                    hint: 'e.g. 100 for 100ml bottle, 1000 for 1kg',
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: stepCtrl,
+                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  style: sans(14, color: kInk),
+                  decoration: fieldDecoration('Smallest sale step in new units', hint: 'e.g. 1, 0.5, 10'),
+                ),
+                if (error != null) ...[
+                  const SizedBox(height: 8),
+                  Text(error!, style: sans(12.5, weight: FontWeight.w600, color: kDanger)),
+                ],
+                const SizedBox(height: 16),
+                FilledButton(
+                  onPressed: () async {
+                    final nu = newUnitCtrl.text.trim();
+                    final factor = double.tryParse(factorCtrl.text.trim());
+                    final step = double.tryParse(stepCtrl.text.trim());
+                    if (nu.isEmpty) {
+                      setDlg(() => error = 'Enter the new base unit name.');
+                      return;
+                    }
+                    if (factor == null || factor <= 0) {
+                      setDlg(() => error = 'Conversion factor must be greater than zero.');
+                      return;
+                    }
+                    if (step == null || step <= 0) {
+                      setDlg(() => error = 'Sale step must be greater than zero.');
+                      return;
+                    }
+                    try {
+                      await widget.repo.convertItemUnit(
+                        itemId: item.id,
+                        newUnit: nu,
+                        factor: factor,
+                        step: step,
+                      );
+                      if (ctx.mounted) Navigator.of(ctx).pop(true);
+                      if (mounted) Navigator.of(context).pop('Item converted to $nu.');
+                    } on InventoryException catch (e) {
+                      setDlg(() => error = e.message);
+                    } catch (e) {
+                      setDlg(() => error = e.toString());
+                    }
+                  },
+                  style: primaryButtonStyle(),
+                  child: const Text('Convert unit and stock'),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
+/// One editable row in the "Extra units" list of the item form.
+class _UnitRowForm {
+  final TextEditingController nameCtrl;
+  final TextEditingController factorCtrl;
+  _UnitRowForm({
+    TextEditingController? nameCtrl,
+    TextEditingController? factorCtrl,
+  })  : nameCtrl = nameCtrl ?? TextEditingController(),
+        factorCtrl = factorCtrl ?? TextEditingController();
+
+  void dispose() {
+    nameCtrl.dispose();
+    factorCtrl.dispose();
   }
 }

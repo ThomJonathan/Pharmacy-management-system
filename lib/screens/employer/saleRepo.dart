@@ -1,10 +1,17 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../../core/quantityUnit.dart';
+
 // ============================================================================
 // SALE — REPOSITORY
 //   Search (sellable stock only), customers, create_sale / get_receipt RPCs,
 //   today's sales list. Prices shown are selling prices; costs never leave
 //   the server (create_sale records them from the batches it draws).
+//
+//   Fractional quantities: each item has a base unit (items.unit), a smallest
+//   sale step (items.quantity_step) and optional bigger units (item_units,
+//   e.g. 1 bottle = 100 ml). The cashier picks a unit and types a quantity in
+//   it; the app converts to base units before calling create_sale.
 // ============================================================================
 
 class SaleException implements Exception {
@@ -18,10 +25,12 @@ class SaleItem {
   final String itemId;
   final String name;
   final String category;
-  final String unit;
-  final double retail;
-  final double wholesale;
-  final double available; // sellable units: on hand + unexpired
+  final String unit; // base unit, e.g. "ml", "tablet", "g"
+  final double retail; // price per base unit
+  final double wholesale; // price per base unit
+  final double available; // sellable base units: on hand + unexpired
+  final double quantityStep; // smallest sale increment in base units (default 1)
+  final List<QtyUnit> units; // bigger units (factor > 1), sorted by factor
   const SaleItem({
     required this.itemId,
     required this.name,
@@ -30,9 +39,22 @@ class SaleItem {
     required this.retail,
     required this.wholesale,
     required this.available,
+    this.quantityStep = 1,
+    this.units = const [],
   });
 
   bool get inStock => available > 0;
+
+  /// All units the cashier can sell in: the base unit first, then the bigger
+  /// ones from item_units. Used by the cart line's unit picker.
+  List<String> get sellableUnits => [unit, ...units.map((u) => u.name)];
+
+  /// Price per [unitName] (base unit itself = 1). Falls back to the base
+  /// price when the unit is unknown.
+  double priceFor(String unitName) => retail * factorFor(unitName, unit, units);
+
+  double wholesalePriceFor(String unitName) =>
+      wholesale * factorFor(unitName, unit, units);
 }
 
 class SaleCustomer {
@@ -79,7 +101,7 @@ class SaleRepository {
   /// Items with their sellable quantity at [branchId]. Expired batches and
   /// empty stock count as zero (greyed out, cannot be added).
   Future<List<SaleItem>> searchItems({required String branchId, String query = '', String? category}) async {
-    dynamic q = _client.from('items').select('id, name, category, unit').eq('is_active', true);
+    dynamic q = _client.from('items').select('id, name, category, unit, quantity_step, item_units(unit_name, factor)').eq('is_active', true);
     if (query.trim().isNotEmpty) q = q.ilike('name', '%${query.trim()}%');
     if (category != null) q = q.eq('category', category);
     final items = await q.order('name').limit(60) as List;
@@ -112,6 +134,8 @@ class SaleRepository {
         retail: retail,
         wholesale: wholesale,
         available: avail,
+        quantityStep: ((it['quantity_step'] as num?) ?? 1).toDouble(),
+        units: parseQtyUnits(it['item_units']),
       ));
     }
     // In-stock first, then alphabetical.
@@ -176,9 +200,13 @@ class SaleRepository {
   /// Calls create_sale (schema.sql). The server resolves the branch from the
   /// signed-in user; p_branch_id is only used for admins. Server messages
   /// are already plain language, so they are shown as-is.
+  ///
+  /// Each line may carry a `unit` (e.g. "bottle"); the server converts the
+  /// quantity to the item's base unit via to_base_qty(). Omit it (or leave it
+  /// null) when the quantity is already in base units.
   Future<Map<String, dynamic>> createSale({
     required String branchId,
-    required List<Map<String, dynamic>> lines, // [{item_id, quantity}]
+    required List<Map<String, dynamic>> lines, // [{item_id, quantity, unit?}]
     required String saleType, // retail | wholesale
     required String method, // cash | airtel_money | tnm_mpamba | card | credit
     String? customerId,

@@ -490,7 +490,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
             crossAxisAlignment: pw.CrossAxisAlignment.start,
             children: [
               pw.Text(
-                'TUMAINI INVESTMENTS',
+                'STOCKA',
                 style: pw.TextStyle(
                   fontSize: 11,
                   fontWeight: pw.FontWeight.bold,

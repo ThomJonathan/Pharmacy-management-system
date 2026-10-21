@@ -56,7 +56,7 @@ class _LoginScreenState extends State<LoginScreen> {
   Widget build(BuildContext context) {
     return AuthScaffold(
       title: 'Welcome back',
-      subtitle: 'Sign in to Tumaini Investments',
+      subtitle: 'Sign in to Stocka',
       form: Form(
         key: _formKey,
         child: Column(

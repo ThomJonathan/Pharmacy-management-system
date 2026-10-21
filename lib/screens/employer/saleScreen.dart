@@ -3,6 +3,7 @@ import 'package:pdf/pdf.dart';
 
 import '../../appPrefs.dart';
 import '../../appUser.dart';
+import '../../core/quantityUnit.dart';
 import '../../widgets/employeeShell.dart';
 import 'employeeUi.dart';
 import 'receipt.dart';
@@ -31,7 +32,8 @@ final saleCartCount = ValueNotifier<int>(0);
 class _Line {
   final SaleItem item;
   double qty;
-  _Line({required this.item, required this.qty});
+  String unitName; // unit the cashier picked (base unit by default)
+  _Line({required this.item, required this.qty, required this.unitName});
 }
 
 class SaleScreen extends StatefulWidget {
@@ -188,48 +190,214 @@ class _SaleScreenState extends State<SaleScreen> {
 
   // ---- Cart --------------------------------------------------------------------
 
-  double _priceOf(SaleItem item) =>
+  /// Price per base unit for the current sale type.
+  double _basePriceOf(SaleItem item) =>
       _saleType == 'wholesale' ? item.wholesale : item.retail;
+
+  /// Price per [line.unitName] (the unit the cashier picked).
+  double _priceOf(_Line line) {
+    final base = _basePriceOf(line.item);
+    return base * factorFor(line.unitName, line.item.unit, line.item.units);
+  }
 
   double get _total {
     var t = 0.0;
     for (final l in _cart.values) {
-      t += l.qty * _priceOf(l.item);
+      t += l.qty * _priceOf(l);
     }
     return t;
   }
 
-  int get _count => _cart.values.fold(0, (s, l) => s + l.qty.toInt());
+  int get _count => _cart.length;
 
   void _add(SaleItem item) {
     if (!item.inStock) return;
-    final line = _cart[item.itemId];
-    final cur = line?.qty ?? 0;
-    if (cur + 1 > item.available) {
-      empToast(
-        context,
-        'Only ${empQty(item.available)} available for ${item.name}.',
-        error: true,
-      );
-      return;
-    }
-    setState(() {
-      _cart[item.itemId] = _Line(item: item, qty: cur + 1);
-    });
+    _showQtySheet(item);
+  }
+
+  /// Opens a sheet to pick a unit and quantity before adding to cart.
+  /// The step is in base units; in a bigger unit it becomes step / factor.
+  void _showQtySheet(SaleItem item) {
+    final baseUnit = item.unit;
+    final stepInBase = item.quantityStep > 0 ? item.quantityStep : 1.0;
+    String selectedUnit = baseUnit;
+    double factor = 1.0;
+    final qtyCtrl = TextEditingController(text: fmtQty(stepInBase));
+
+    double stepInUnit() => stepInBase / factor;
+    double maxInUnit() => item.available / factor;
+
+    _showSaleSheet<bool>(
+      context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSheet) {
+          final qty = double.tryParse(qtyCtrl.text.trim()) ?? 0;
+          final price = _saleType == 'wholesale'
+              ? item.wholesalePriceFor(selectedUnit)
+              : item.priceFor(selectedUnit);
+          final total = qty * price;
+          final step = stepInUnit();
+          final isValidStep = onStep(qty, step);
+          final overMax = qty > maxInUnit();
+          return EmpSheetFrame(
+            title: item.name,
+            subtitle: 'Pick a unit and quantity to sell.',
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text('Unit', style: empSans(12.5, weight: FontWeight.w600, color: empMuted)),
+                const SizedBox(height: 6),
+                Wrap(
+                  spacing: 8,
+                  children: [
+                    for (final u in item.sellableUnits)
+                      EmpFilterPill(
+                        label: u,
+                        selected: selectedUnit == u,
+                        onTap: () => setSheet(() {
+                          final oldFactor = factor;
+                          selectedUnit = u;
+                          factor = factorFor(u, baseUnit, item.units);
+                          final cur = double.tryParse(qtyCtrl.text.trim()) ?? 0;
+                          if (cur > 0) {
+                            final curInBase = cur * oldFactor;
+                            final newInUnit = curInBase / factor;
+                            final max = maxInUnit();
+                            final clamped = newInUnit > max ? max : newInUnit;
+                            qtyCtrl.text = fmtQty(clamped);
+                          } else {
+                            qtyCtrl.text = fmtQty(stepInUnit());
+                          }
+                        }),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 14),
+                TextField(
+                  controller: qtyCtrl,
+                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  style: empSans(15, color: empInk),
+                  onChanged: (_) => setSheet(() {}),
+                  decoration: empField('Quantity').copyWith(
+                    suffixText: selectedUnit,
+                    suffixStyle: empSans(12, color: empMuted),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        'Step: ${fmtQty(step)} $selectedUnit',
+                        style: empSans(12, color: empMuted),
+                      ),
+                    ),
+                    Text(
+                      'Max: ${fmtQty(maxInUnit())} $selectedUnit',
+                      style: empSans(12, color: empMuted),
+                    ),
+                  ],
+                ),
+                if (!isValidStep && qty > 0) ...[
+                  const SizedBox(height: 6),
+                  Text(
+                    'Must be in steps of ${fmtQty(step)} $selectedUnit.',
+                    style: empSans(12, color: empDanger),
+                  ),
+                ],
+                if (overMax) ...[
+                  const SizedBox(height: 6),
+                  Text(
+                    'Only ${fmtQty(maxInUnit())} $selectedUnit available.',
+                    style: empSans(12, color: empDanger),
+                  ),
+                ],
+                const SizedBox(height: 14),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                  decoration: BoxDecoration(
+                    color: empSurface,
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          '${empMk(price)} × ${fmtQty(qty)}',
+                          style: empSans(13, color: empInk),
+                        ),
+                      ),
+                      Text(
+                        empMk(total),
+                        style: empMono(17, weight: FontWeight.w700, color: empPrimary),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
+                FilledButton(
+                  onPressed: (qty > 0 && isValidStep && !overMax)
+                      ? () {
+                          final line = _cart[item.itemId];
+                          if (line != null) {
+                            final existingInBase =
+                                line.qty * factorFor(line.unitName, baseUnit, item.units);
+                            final addedInBase = qty * factor;
+                            final totalInBase = existingInBase + addedInBase;
+                            if (totalInBase > item.available) {
+                              setSheet(() {});
+                              empToast(
+                                context,
+                                'Only ${fmtQty(maxInUnit())} $selectedUnit available for ${item.name}.',
+                                error: true,
+                              );
+                              return;
+                            }
+                            Navigator.of(ctx).pop(true);
+                            setState(() {
+                              line.unitName = selectedUnit;
+                              line.qty = totalInBase / factor;
+                            });
+                          } else {
+                            Navigator.of(ctx).pop(true);
+                            setState(() {
+                              _cart[item.itemId] = _Line(
+                                item: item,
+                                qty: qty,
+                                unitName: selectedUnit,
+                              );
+                            });
+                          }
+                        }
+                      : null,
+                  style: empPrimaryButton(),
+                  child: const Text('Add to sale'),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
   }
 
   void _bump(String id, double delta) {
     final line = _cart[id];
     if (line == null) return;
-    final next = line.qty + delta;
+    // Step is in base units; convert to the line's unit for the +/- buttons.
+    final stepInBase = line.item.quantityStep > 0 ? line.item.quantityStep : 1.0;
+    final factor = factorFor(line.unitName, line.item.unit, line.item.units);
+    final stepInUnit = stepInBase / factor;
+    final bumpStep = stepInUnit < 0.1 ? 1.0 : stepInUnit;
+    final next = roundQty(line.qty + delta * bumpStep);
     if (next <= 0) {
       setState(() => _cart.remove(id));
       return;
     }
-    if (next > line.item.available) {
+    if (next * factor > line.item.available) {
       empToast(
         context,
-        'Only ${empQty(line.item.available)} available.',
+        'Only ${fmtQty(line.item.available / factor)} ${line.unitName} available.',
         error: true,
       );
       return;
@@ -240,20 +408,36 @@ class _SaleScreenState extends State<SaleScreen> {
   void _setQty(String id, double qty) {
     final line = _cart[id];
     if (line == null) return;
+    final factor = factorFor(line.unitName, line.item.unit, line.item.units);
     if (qty <= 0) {
       setState(() => _cart.remove(id));
       return;
     }
-    if (qty > line.item.available) {
+    if (qty * factor > line.item.available) {
       empToast(
         context,
-        'Only ${empQty(line.item.available)} available for ${line.item.name}.',
+        'Only ${fmtQty(line.item.available / factor)} ${line.unitName} available for ${line.item.name}.',
         error: true,
       );
-      setState(() => line.qty = line.item.available);
+      setState(() => line.qty = line.item.available / factor);
       return;
     }
     setState(() => line.qty = qty);
+  }
+
+  void _changeUnit(String id, String newUnitName) {
+    final line = _cart[id];
+    if (line == null) return;
+    final oldFactor = factorFor(line.unitName, line.item.unit, line.item.units);
+    final newFactor = factorFor(newUnitName, line.item.unit, line.item.units);
+    // Convert qty to the new unit, clamped to availability
+    final qtyInBase = line.qty * oldFactor;
+    final maxInBase = line.item.available;
+    final clampedBase = qtyInBase > maxInBase ? maxInBase : qtyInBase;
+    setState(() {
+      line.unitName = newUnitName;
+      line.qty = clampedBase / newFactor;
+    });
   }
 
   Future<void> _clearCart({VoidCallback? onChanged}) async {
@@ -313,6 +497,16 @@ class _SaleScreenState extends State<SaleScreen> {
       setState(() => _formError = 'The cart is empty — add an item first.');
       return;
     }
+    for (final l in _cart.values) {
+      final factor = factorFor(l.unitName, l.item.unit, l.item.units);
+      final stepInBase = l.item.quantityStep > 0 ? l.item.quantityStep : 1.0;
+      final stepInUnit = stepInBase / factor;
+      if (!onStep(l.qty, stepInUnit)) {
+        setState(() => _formError =
+            '${l.item.name} must be sold in steps of ${fmtQty(stepInUnit)} ${l.unitName}.');
+        return;
+      }
+    }
     if (_method == 'credit' && _customer == null) {
       setState(
         () => _formError = 'Credit sales need a customer. Add one below.',
@@ -354,7 +548,13 @@ class _SaleScreenState extends State<SaleScreen> {
         branchId: bid,
         lines: [
           for (final l in _cart.values)
-            {'item_id': l.item.itemId, 'quantity': l.qty},
+            {
+              'item_id': l.item.itemId,
+              'quantity': roundQty(
+                l.qty * factorFor(l.unitName, l.item.unit, l.item.units),
+              ),
+              'unit': l.unitName,
+            },
         ],
         saleType: _saleType,
         method: _method,
@@ -899,7 +1099,7 @@ class _SaleScreenState extends State<SaleScreen> {
           final isLast = i == _items.length - 1;
           return _ItemRow(
             item: item,
-            price: _priceOf(item),
+            price: _saleType == 'wholesale' ? item.wholesale : item.retail,
             saleType: _saleType,
             isLast: isLast,
             onAdd: () => _add(item),
@@ -948,13 +1148,17 @@ class _SaleScreenState extends State<SaleScreen> {
             _CartLineRow(
               key: ValueKey(l.item.itemId),
               line: l,
-              price: _priceOf(l.item),
+              price: _priceOf(l),
               onBump: (id, delta) {
                 _bump(id, delta);
                 onChanged?.call();
               },
               onSet: (id, qty) {
                 _setQty(id, qty);
+                onChanged?.call();
+              },
+              onUnitChanged: (id, unitName) {
+                _changeUnit(id, unitName);
                 onChanged?.call();
               },
             ),
@@ -1169,12 +1373,14 @@ class _CartLineRow extends StatefulWidget {
   final double price;
   final void Function(String id, double delta) onBump;
   final void Function(String id, double qty) onSet;
+  final void Function(String id, String unitName) onUnitChanged;
   const _CartLineRow({
     super.key,
     required this.line,
     required this.price,
     required this.onBump,
     required this.onSet,
+    required this.onUnitChanged,
   });
 
   @override
@@ -1188,7 +1394,7 @@ class _CartLineRowState extends State<_CartLineRow> {
   @override
   void initState() {
     super.initState();
-    _qtyCtrl = TextEditingController(text: empQty(widget.line.qty));
+    _qtyCtrl = TextEditingController(text: fmtQty(widget.line.qty));
     _qtyFocus = FocusNode();
     _qtyFocus.addListener(_onFocusChange);
   }
@@ -1198,7 +1404,7 @@ class _CartLineRowState extends State<_CartLineRow> {
     super.didUpdateWidget(oldWidget);
     // Keep the field in sync when +/- buttons (or clamping) change qty,
     // but don't stomp on what the user is actively typing.
-    final current = empQty(widget.line.qty);
+    final current = fmtQty(widget.line.qty);
     if (!_qtyFocus.hasFocus && _qtyCtrl.text != current) {
       _qtyCtrl.text = current;
     }
@@ -1221,14 +1427,14 @@ class _CartLineRowState extends State<_CartLineRow> {
     final parsed = double.tryParse(raw);
     if (parsed == null) {
       // Invalid input — revert to the real qty.
-      _qtyCtrl.text = empQty(widget.line.qty);
+      _qtyCtrl.text = fmtQty(widget.line.qty);
       return;
     }
     if (parsed != widget.line.qty) {
       widget.onSet(widget.line.item.itemId, parsed);
     } else {
       // Normalise formatting (e.g. "02" -> "2").
-      final formatted = empQty(widget.line.qty);
+      final formatted = fmtQty(widget.line.qty);
       if (_qtyCtrl.text != formatted) _qtyCtrl.text = formatted;
     }
   }
@@ -1236,78 +1442,132 @@ class _CartLineRowState extends State<_CartLineRow> {
   @override
   Widget build(BuildContext context) {
     final line = widget.line;
+    final factor = factorFor(line.unitName, line.item.unit, line.item.units);
+    final stepInBase = line.item.quantityStep > 0 ? line.item.quantityStep : 1;
+    final stepInUnit = stepInBase / factor;
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  line.item.name,
-                  style: empSans(13.5, weight: FontWeight.w600, color: empInk),
+          Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      line.item.name,
+                      style: empSans(13.5, weight: FontWeight.w600, color: empInk),
+                    ),
+                    Text(
+                      '${empMk(widget.price)} ${line.unitName} · ${empMk(line.qty * widget.price)}',
+                      style: empSans(12, color: empMuted),
+                    ),
+                  ],
                 ),
-                Text(
-                  '${empMk(widget.price)} each · ${empMk(line.qty * widget.price)}',
-                  style: empSans(12, color: empMuted),
-                ),
-              ],
-            ),
-          ),
-          Container(
-            decoration: BoxDecoration(
-              border: Border.all(color: empBorder),
-              borderRadius: BorderRadius.circular(4),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                IconButton(
-                  icon: const Icon(Icons.remove, size: 17),
-                  color: empPrimary,
-                  onPressed: () => widget.onBump(line.item.itemId, -1),
-                  visualDensity: VisualDensity.compact,
-                ),
-                SizedBox(
-                  width: 52,
-                  child: Center(
-                    child: TextField(
-                      controller: _qtyCtrl,
-                      focusNode: _qtyFocus,
-                      textAlign: TextAlign.center,
-                      keyboardType: const TextInputType.numberWithOptions(
-                        decimal: true,
+              ),
+              // Unit picker (only shown when the item has extra units)
+              if (line.item.sellableUnits.length > 1)
+                PopupMenuButton<String>(
+                  tooltip: 'Change unit',
+                  itemBuilder: (_) => [
+                    for (final u in line.item.sellableUnits)
+                      PopupMenuItem(
+                        value: u,
+                        child: Text(u, style: empSans(13)),
                       ),
-                      textInputAction: TextInputAction.done,
-                      style: empMono(
-                        13.5,
-                        weight: FontWeight.w700,
-                        color: empInk,
-                      ),
-                      decoration: const InputDecoration(
-                        border: InputBorder.none,
-                        isDense: true,
-                        contentPadding: EdgeInsets.symmetric(vertical: 6),
-                      ),
-                      onSubmitted: (_) => _commit(),
-                      onTap: () => _qtyCtrl.selection = TextSelection(
-                        baseOffset: 0,
-                        extentOffset: _qtyCtrl.text.length,
-                      ),
+                  ],
+                  onSelected: (u) {
+                    if (u == line.unitName) return;
+                    // Convert the current qty to the new unit
+                    final newFactor = factorFor(u, line.item.unit, line.item.units);
+                    final newQty = line.qty * factor / newFactor;
+                    // Round to the new unit's step
+                    final newStep = stepInBase / newFactor;
+                    final rounded = (newQty / newStep).roundToDouble() * newStep;
+                    widget.onUnitChanged(line.item.itemId, u);
+                    // Update the text field to match
+                    _qtyCtrl.text = fmtQty(rounded);
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      border: Border.all(color: empBorder),
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(line.unitName, style: empSans(12, color: empInk)),
+                        const Icon(Icons.arrow_drop_down, size: 16, color: empMuted),
+                      ],
                     ),
                   ),
                 ),
-                IconButton(
-                  icon: const Icon(Icons.add, size: 17),
-                  color: empPrimary,
-                  onPressed: line.qty + 1 > line.item.available
-                      ? null
-                      : () => widget.onBump(line.item.itemId, 1),
-                  visualDensity: VisualDensity.compact,
+            ],
+          ),
+          const SizedBox(height: 6),
+          Row(
+            children: [
+              Container(
+                decoration: BoxDecoration(
+                  border: Border.all(color: empBorder),
+                  borderRadius: BorderRadius.circular(4),
                 ),
-              ],
-            ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    IconButton(
+                      icon: const Icon(Icons.remove, size: 17),
+                      color: empPrimary,
+                      onPressed: () => widget.onBump(line.item.itemId, -1),
+                      visualDensity: VisualDensity.compact,
+                    ),
+                    SizedBox(
+                      width: 68,
+                      child: Center(
+                        child: TextField(
+                          controller: _qtyCtrl,
+                          focusNode: _qtyFocus,
+                          textAlign: TextAlign.center,
+                          keyboardType: const TextInputType.numberWithOptions(
+                            decimal: true,
+                          ),
+                          textInputAction: TextInputAction.done,
+                          style: empMono(
+                            13.5,
+                            weight: FontWeight.w700,
+                            color: empInk,
+                          ),
+                          decoration: const InputDecoration(
+                            border: InputBorder.none,
+                            isDense: true,
+                            contentPadding: EdgeInsets.symmetric(vertical: 6),
+                          ),
+                          onSubmitted: (_) => _commit(),
+                          onTap: () => _qtyCtrl.selection = TextSelection(
+                            baseOffset: 0,
+                            extentOffset: _qtyCtrl.text.length,
+                          ),
+                        ),
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.add, size: 17),
+                      color: empPrimary,
+                      onPressed: () => widget.onBump(line.item.itemId, 1),
+                      visualDensity: VisualDensity.compact,
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                'step ${fmtQty(stepInUnit)}',
+                style: empSans(11, color: empMuted),
+              ),
+            ],
           ),
         ],
       ),

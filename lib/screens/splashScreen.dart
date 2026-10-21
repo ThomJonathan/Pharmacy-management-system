@@ -221,7 +221,7 @@ class _Wordmark extends StatelessWidget {
         ),
         const SizedBox(height: 6),
         Text(
-          'Tumaini Investments',
+          'Stocka',
           textAlign: TextAlign.center,
           style: GoogleFonts.ibmPlexSans(
             fontSize: 25,
