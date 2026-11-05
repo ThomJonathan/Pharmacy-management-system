@@ -293,6 +293,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
         _businessTypes = results[8] as List<BusinessTypeOption>;
         _branchBusinessTypeIds = results[9] as List<String>;
         _loading = false;
+        _invalidateFilterCaches();
       });
     } catch (e) {
       if (!mounted) return;
@@ -306,91 +307,121 @@ class _InventoryScreenState extends State<InventoryScreen> {
   /// Branch зміни → server refetch; search/category/type stay client-side.
   Future<void> _onBranchChanged(String? id) async {
     if (id == _branchId) return;
-    setState(() => _branchId = id);
+    setState(() {
+      _branchId = id;
+      _invalidateFilterCaches();
+    });
     await _load();
   }
 
-  // ---- Client-side filtering (search + category) ---------------------------
+  // ---- Client-side filtering (search + category with memoization) -----------
+
+  List<ItemStock>? _cachedVisibleItems;
+  List<CatalogItem>? _cachedVisibleCatalog;
+  List<StockMovement>? _cachedVisibleMovements;
+  List<PurchaseOrder>? _cachedVisiblePurchases;
+  List<List<StockBatch>>? _cachedExpiryBuckets;
+  InventorySummary? _cachedSummary;
+
+  void _invalidateFilterCaches() {
+    _cachedVisibleItems = null;
+    _cachedVisibleCatalog = null;
+    _cachedVisibleMovements = null;
+    _cachedVisiblePurchases = null;
+    _cachedExpiryBuckets = null;
+    _cachedSummary = null;
+  }
 
   List<ItemStock> get _visibleItems {
-    final q = _search.trim().toLowerCase();
-    return _items.where((it) {
-      if (_category != null && it.category != _category) return false;
-      if (q.isEmpty) return true;
-      if (it.itemName.toLowerCase().contains(q)) return true;
-      return it.batches.any(
-        (b) =>
-            b.batchNumber.toLowerCase().contains(q) ||
-            b.branchName.toLowerCase().contains(q),
-      );
-    }).toList();
+    return _cachedVisibleItems ??= () {
+      final q = _search.trim().toLowerCase();
+      return _items.where((it) {
+        if (_category != null && it.category != _category) return false;
+        if (q.isEmpty) return true;
+        if (it.itemName.toLowerCase().contains(q)) return true;
+        return it.batches.any(
+          (b) =>
+              b.batchNumber.toLowerCase().contains(q) ||
+              b.branchName.toLowerCase().contains(q),
+        );
+      }).toList();
+    }();
   }
 
   List<CatalogItem> get _visibleCatalog {
-    final q = _search.trim().toLowerCase();
-    return _catalog.where((c) {
-      if (!_showInactive && !c.isActive) return false;
-      if (_category != null && c.category != _category) return false;
-      if (_branchId != null && _branchBusinessTypeIds.isNotEmpty) {
-        if (!_branchBusinessTypeIds.contains(c.businessTypeId)) return false;
-      }
-      if (q.isEmpty) return true;
-      return c.name.toLowerCase().contains(q);
-    }).toList();
+    return _cachedVisibleCatalog ??= () {
+      final q = _search.trim().toLowerCase();
+      return _catalog.where((c) {
+        if (!_showInactive && !c.isActive) return false;
+        if (_category != null && c.category != _category) return false;
+        if (_branchId != null && _branchBusinessTypeIds.isNotEmpty) {
+          if (!_branchBusinessTypeIds.contains(c.businessTypeId)) return false;
+        }
+        if (q.isEmpty) return true;
+        return c.name.toLowerCase().contains(q);
+      }).toList();
+    }();
   }
 
   List<StockMovement> get _visibleMovements {
-    final q = _search.trim().toLowerCase();
-    return _movements.where((m) {
-      if (_movementType != null && m.type != _movementType) return false;
-      if (q.isEmpty) return true;
-      return m.itemName.toLowerCase().contains(q) ||
-          m.branchName.toLowerCase().contains(q) ||
-          (m.notes ?? '').toLowerCase().contains(q);
-    }).toList();
+    return _cachedVisibleMovements ??= () {
+      final q = _search.trim().toLowerCase();
+      return _movements.where((m) {
+        if (_movementType != null && m.type != _movementType) return false;
+        if (q.isEmpty) return true;
+        return m.itemName.toLowerCase().contains(q) ||
+            m.branchName.toLowerCase().contains(q) ||
+            (m.notes ?? '').toLowerCase().contains(q);
+      }).toList();
+    }();
   }
 
   List<PurchaseOrder> get _visiblePurchases {
-    final q = _search.trim().toLowerCase();
-    if (q.isEmpty) return _purchases;
-    return _purchases.where((p) {
-      return p.supplierName.toLowerCase().contains(q) ||
-          p.branchName.toLowerCase().contains(q) ||
-          p.invoiceNumber.toLowerCase().contains(q);
-    }).toList();
+    return _cachedVisiblePurchases ??= () {
+      final q = _search.trim().toLowerCase();
+      if (q.isEmpty) return _purchases;
+      return _purchases.where((p) {
+        return p.supplierName.toLowerCase().contains(q) ||
+            p.branchName.toLowerCase().contains(q) ||
+            p.invoiceNumber.toLowerCase().contains(q);
+      }).toList();
+    }();
   }
 
   /// Expiry buckets derived from the visible items: expired / <30 / 30-60 / 60-90.
   List<List<StockBatch>> _expiryBuckets() {
-    final expired = <StockBatch>[];
-    final u30 = <StockBatch>[];
-    final u60 = <StockBatch>[];
-    final u90 = <StockBatch>[];
-    for (final it in _visibleItems) {
-      for (final b in it.batches) {
-        final d = b.daysToExpiry;
-        if (d == null) continue;
-        if (d < 0) {
-          expired.add(b);
-        } else if (d < 30) {
-          u30.add(b);
-        } else if (d <= 60) {
-          u60.add(b);
-        } else if (d <= 90) {
-          u90.add(b);
+    return _cachedExpiryBuckets ??= () {
+      final expired = <StockBatch>[];
+      final u30 = <StockBatch>[];
+      final u60 = <StockBatch>[];
+      final u90 = <StockBatch>[];
+      for (final it in _visibleItems) {
+        for (final b in it.batches) {
+          final d = b.daysToExpiry;
+          if (d == null) continue;
+          if (d < 0) {
+            expired.add(b);
+          } else if (d < 30) {
+            u30.add(b);
+          } else if (d <= 60) {
+            u60.add(b);
+          } else if (d <= 90) {
+            u90.add(b);
+          }
         }
       }
-    }
-    int byDate(StockBatch a, StockBatch b) =>
-        (a.expiryDate ?? '').compareTo(b.expiryDate ?? '');
-    expired.sort(byDate);
-    u30.sort(byDate);
-    u60.sort(byDate);
-    u90.sort(byDate);
-    return [expired, u30, u60, u90];
+      int byDate(StockBatch a, StockBatch b) =>
+          (a.expiryDate ?? '').compareTo(b.expiryDate ?? '');
+      expired.sort(byDate);
+      u30.sort(byDate);
+      u60.sort(byDate);
+      u90.sort(byDate);
+      return [expired, u30, u60, u90];
+    }();
   }
 
-  InventorySummary get _summary => _repo.summarize(_visibleItems);
+  InventorySummary get _summary =>
+      _cachedSummary ??= _repo.summarize(_visibleItems);
 
   String get _scopeName {
     if (_branchId == null) return 'All branches';
@@ -636,65 +667,78 @@ class _InventoryScreenState extends State<InventoryScreen> {
           child: LayoutBuilder(
             builder: (context, c) {
               final wide = c.maxWidth >= kWideContentBreakpoint;
-              return SingleChildScrollView(
-                physics: const AlwaysScrollableScrollPhysics(),
-                padding: EdgeInsets.fromLTRB(
-                  wide ? 32 : 18,
-                  wide ? 28 : 12,
-                  wide ? 32 : 18,
-                  96,
-                ),
-                child: Center(
-                  child: ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 1080),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        if (_showNeedsAttention)
-                          _attentionTitle()
-                        else
-                          PageTitle(
-                            title: 'Inventory',
-                            subtitle: _loading
-                                ? 'Loading…'
-                                : '${_visibleItems.length} items · $_scopeName',
-                            trailing: _exporting
-                                ? const SizedBox(
-                                    width: 44,
-                                    height: 44,
-                                    child: Center(
-                                      child: SizedBox(
-                                        width: 20,
-                                        height: 20,
-                                        child: CircularProgressIndicator(
-                                          strokeWidth: 2,
-                                          color: kPrimary,
+              final horizontalPadding = wide ? 32.0 : 18.0;
+              final topPadding = wide ? 28.0 : 12.0;
+
+              return Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 1080),
+                  child: CustomScrollView(
+                    physics: const AlwaysScrollableScrollPhysics(),
+                    slivers: [
+                      SliverPadding(
+                        padding: EdgeInsets.fromLTRB(
+                          horizontalPadding,
+                          topPadding,
+                          horizontalPadding,
+                          _showNeedsAttention ? 0 : 14,
+                        ),
+                        sliver: SliverToBoxAdapter(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              if (_showNeedsAttention)
+                                _attentionTitle()
+                              else
+                                PageTitle(
+                                  title: 'Inventory',
+                                  subtitle: _loading
+                                      ? 'Loading…'
+                                      : '${_visibleItems.length} items · $_scopeName',
+                                  trailing: _exporting
+                                      ? const SizedBox(
+                                          width: 44,
+                                          height: 44,
+                                          child: Center(
+                                            child: SizedBox(
+                                              width: 20,
+                                              height: 20,
+                                              child: CircularProgressIndicator(
+                                                strokeWidth: 2,
+                                                color: kPrimary,
+                                              ),
+                                            ),
+                                          ),
+                                        )
+                                      : OutlinedButton.icon(
+                                          onPressed: _loading
+                                              ? null
+                                              : _exportCurrentTab,
+                                          style: outlineButtonStyle(height: 44),
+                                          icon: const Icon(
+                                            Icons.download_outlined,
+                                            size: 18,
+                                          ),
+                                          label: const Text('Export'),
                                         ),
-                                      ),
-                                    ),
-                                  )
-                                : OutlinedButton.icon(
-                                    onPressed: _loading
-                                        ? null
-                                        : _exportCurrentTab,
-                                    style: outlineButtonStyle(height: 44),
-                                    icon: const Icon(
-                                      Icons.download_outlined,
-                                      size: 18,
-                                    ),
-                                    label: const Text('Export'),
-                                  ),
+                                ),
+                              const SizedBox(height: 18),
+                              if (!_showNeedsAttention) ...[
+                                _filterBar(wide),
+                                const SizedBox(height: 16),
+                                _actionButtons(),
+                                const SizedBox(height: 14),
+                                _summaryCards(wide),
+                                const SizedBox(height: 16),
+                                _tabChips(),
+                              ],
+                            ],
                           ),
-                        const SizedBox(height: 18),
-                        if (_showNeedsAttention)
-                          _attentionBody(wide)
-                        else ...[
-                          _filterBar(wide),
-                          const SizedBox(height: 16),
-                          _body(wide),
-                        ],
-                      ],
-                    ),
+                        ),
+                      ),
+                      ..._buildContentSlivers(wide, horizontalPadding),
+                      const SliverToBoxAdapter(child: SizedBox(height: 96)),
+                    ],
                   ),
                 ),
               );
@@ -728,64 +772,698 @@ class _InventoryScreenState extends State<InventoryScreen> {
     );
   }
 
-  Widget _attentionBody(bool wide) {
+  Widget _actionButtons() {
+    return Align(
+      alignment: Alignment.centerRight,
+      child: Wrap(
+        alignment: WrapAlignment.end,
+        spacing: 10,
+        runSpacing: 10,
+        children: [
+          FilledButton.icon(
+            onPressed: _loading ? null : _addStock,
+            style: primaryButtonStyle(height: 42),
+            icon: const Icon(Icons.add_box_outlined, size: 18),
+            label: const Text('Add stock'),
+          ),
+          OutlinedButton.icon(
+            onPressed: _loading ? null : () => _addOrEditItem(),
+            style: outlineButtonStyle(height: 42),
+            icon: const Icon(Icons.playlist_add_outlined, size: 18),
+            label: const Text('Add catalog item'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  List<Widget> _buildContentSlivers(bool wide, double horizontalPadding) {
+    if (_loading) {
+      return [
+        SliverPadding(
+          padding: EdgeInsets.symmetric(horizontal: horizontalPadding),
+          sliver: const SliverToBoxAdapter(
+            child: Padding(
+              padding: EdgeInsets.only(top: 80),
+              child: Center(child: CircularProgressIndicator(color: kPrimary)),
+            ),
+          ),
+        ),
+      ];
+    }
+    if (_error != null) {
+      return [
+        SliverPadding(
+          padding: EdgeInsets.symmetric(horizontal: horizontalPadding),
+          sliver: SliverToBoxAdapter(
+            child: ErrorState(message: _error!, onRetry: _load),
+          ),
+        ),
+      ];
+    }
+    if (_showNeedsAttention) {
+      return _attentionSlivers(wide, horizontalPadding);
+    }
+    switch (_tab) {
+      case 0:
+        return _overviewSlivers(wide, horizontalPadding);
+      case 1:
+        return _lowStockSlivers(wide, horizontalPadding);
+      case 2:
+        return _expirySlivers(wide, horizontalPadding);
+      case 3:
+        return _movementsSlivers(wide, horizontalPadding);
+      case 4:
+        return _purchasesSlivers(wide, horizontalPadding);
+      default:
+        return _catalogSlivers(wide, horizontalPadding);
+    }
+  }
+
+  List<Widget> _overviewSlivers(bool wide, double horizontalPadding) {
+    final items = _visibleItems;
+    if (items.isEmpty) {
+      return [
+        SliverPadding(
+          padding: EdgeInsets.symmetric(horizontal: horizontalPadding),
+          sliver: const SliverToBoxAdapter(
+            child: EmptyState(
+              icon: Icons.inventory_2_outlined,
+              title: 'No stock found',
+              message: 'Try a different branch, category or search.',
+            ),
+          ),
+        ),
+      ];
+    }
+    return [
+      if (wide)
+        SliverPadding(
+          padding: EdgeInsets.symmetric(horizontal: horizontalPadding),
+          sliver: SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: _overviewHeader(),
+            ),
+          ),
+        ),
+      SliverPadding(
+        padding: EdgeInsets.symmetric(horizontal: horizontalPadding),
+        sliver: SliverList.separated(
+          itemCount: items.length,
+          separatorBuilder: (_, __) => const SizedBox(height: 8),
+          itemBuilder: (context, i) {
+            return _OverviewRow(
+              key: ValueKey(items[i].itemId),
+              item: items[i],
+              wide: wide,
+              showBranch: _branchId == null,
+              onAdjust: _adjust,
+              onEditPrices: _editPrices,
+            );
+          },
+        ),
+      ),
+    ];
+  }
+
+  Widget _overviewHeader() {
+    const style = TextStyle(
+      fontSize: 11.5,
+      fontWeight: FontWeight.w600,
+      color: kInkMuted,
+    );
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: Row(
+        children: const [
+          Expanded(flex: 3, child: Text('ITEM', style: style)),
+          Expanded(flex: 1, child: Text('ON HAND', style: style)),
+          Expanded(flex: 1, child: Text('REORDER', style: style)),
+          Expanded(flex: 1, child: Text('STATUS', style: style)),
+          Expanded(
+            flex: 1,
+            child: Text('VALUE', style: style, textAlign: TextAlign.right),
+          ),
+          SizedBox(width: 40),
+        ],
+      ),
+    );
+  }
+
+  List<Widget> _lowStockSlivers(bool wide, double horizontalPadding) {
+    if (_low.isEmpty) {
+      return [
+        SliverPadding(
+          padding: EdgeInsets.symmetric(horizontal: horizontalPadding),
+          sliver: const SliverToBoxAdapter(
+            child: EmptyState(
+              icon: Icons.check_circle_outline,
+              title: 'Stock levels are healthy',
+              message:
+                  'Nothing is at or below its reorder level for this filter.',
+            ),
+          ),
+        ),
+      ];
+    }
+    return [
+      SliverPadding(
+        padding: EdgeInsets.symmetric(horizontal: horizontalPadding),
+        sliver: SliverList.separated(
+          itemCount: _low.length,
+          separatorBuilder: (_, __) => const SizedBox(height: 8),
+          itemBuilder: (context, i) {
+            return _LowStockCard(
+              key: ValueKey('low_${_low[i].itemName}_${_low[i].branchName}'),
+              row: _low[i],
+            );
+          },
+        ),
+      ),
+    ];
+  }
+
+  List<Widget> _expirySlivers(bool wide, double horizontalPadding) {
+    final buckets = _expiryBuckets();
+    final total = buckets.fold(0, (s, b) => s + b.length);
+    if (total == 0) {
+      return [
+        SliverPadding(
+          padding: EdgeInsets.symmetric(horizontal: horizontalPadding),
+          sliver: const SliverToBoxAdapter(
+            child: EmptyState(
+              icon: Icons.check_circle_outline,
+              title: 'No batches expiring soon',
+              message: 'Nothing in scope expires within the next 90 days.',
+            ),
+          ),
+        ),
+      ];
+    }
+    const titles = [
+      'Already expired',
+      'Under 30 days',
+      '30 to 60 days',
+      '60 to 90 days',
+    ];
+    const subs = [
+      'Write off or remove from sale.',
+      'Discount or push first.',
+      'Plan to move soon.',
+      'Watch list.',
+    ];
+    final slivers = <Widget>[];
+    for (int i = 0; i < buckets.length; i++) {
+      final list = buckets[i];
+      if (list.isEmpty) continue;
+      slivers.add(
+        SliverPadding(
+          padding: EdgeInsets.fromLTRB(
+            horizontalPadding,
+            slivers.isEmpty ? 0 : 12,
+            horizontalPadding,
+            8,
+          ),
+          sliver: SliverToBoxAdapter(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '${titles[i]} (${list.length})',
+                  style: sans(
+                    13,
+                    weight: FontWeight.w700,
+                    color: i == 0 ? kDanger : kInk,
+                  ),
+                ),
+                Text(subs[i], style: sans(11.5, color: kInkMuted)),
+              ],
+            ),
+          ),
+        ),
+      );
+      slivers.add(
+        SliverPadding(
+          padding: EdgeInsets.symmetric(horizontal: horizontalPadding),
+          sliver: SliverList.separated(
+            itemCount: list.length,
+            separatorBuilder: (_, __) => const SizedBox(height: 8),
+            itemBuilder: (context, idx) {
+              final b = list[idx];
+              return _ExpiryBatchCard(
+                key: ValueKey('exp_${b.id}'),
+                batch: b,
+                isExpired: i == 0,
+                onAdjust: _adjust,
+              );
+            },
+          ),
+        ),
+      );
+    }
+    return slivers;
+  }
+
+  List<Widget> _movementsSlivers(bool wide, double horizontalPadding) {
+    final movements = _visibleMovements;
+    final activityLabel = _activityUserId == null
+        ? null
+        : 'Activity: ${_activityUserName ?? 'cashier'} · ${_fmtDate(_activityFrom?.toIso8601String())} – ${_fmtDate(_activityTo?.toIso8601String())}';
+
+    return [
+      SliverPadding(
+        padding: EdgeInsets.symmetric(horizontal: horizontalPadding),
+        sliver: SliverToBoxAdapter(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              if (activityLabel != null) ...[
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 9,
+                  ),
+                  decoration: BoxDecoration(
+                    color: kPrimaryTint,
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(
+                        Icons.person_search_outlined,
+                        size: 17,
+                        color: kPrimary,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          activityLabel,
+                          style: sans(
+                            12.5,
+                            weight: FontWeight.w600,
+                            color: kPrimary,
+                          ),
+                        ),
+                      ),
+                      InkWell(
+                        onTap: () {
+                          setState(() {
+                            _activityUserId = null;
+                            _activityUserName = null;
+                            _activityFrom = null;
+                            _activityTo = null;
+                            _invalidateFilterCaches();
+                          });
+                          _load();
+                        },
+                        borderRadius: BorderRadius.circular(4),
+                        child: const Padding(
+                          padding: EdgeInsets.all(4),
+                          child: Icon(Icons.close, size: 16, color: kPrimary),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 10),
+              ],
+              SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  children: [
+                    FilterPill(
+                      label: 'All types',
+                      selected: _movementType == null,
+                      onTap: () => setState(() {
+                        _movementType = null;
+                        _invalidateFilterCaches();
+                      }),
+                    ),
+                    const SizedBox(width: 8),
+                    for (final t in _kMovementTypes) ...[
+                      FilterPill(
+                        label: _movementMeta(t).label,
+                        selected: _movementType == t,
+                        onTap: () => setState(() {
+                          _movementType = _movementType == t ? null : t;
+                          _invalidateFilterCaches();
+                        }),
+                      ),
+                      const SizedBox(width: 8),
+                    ],
+                  ],
+                ),
+              ),
+              const SizedBox(height: 12),
+            ],
+          ),
+        ),
+      ),
+      if (movements.isEmpty)
+        SliverPadding(
+          padding: EdgeInsets.symmetric(horizontal: horizontalPadding),
+          sliver: const SliverToBoxAdapter(
+            child: EmptyState(
+              icon: Icons.history_outlined,
+              title: 'No movements found',
+              message: 'Try a different type, branch or search.',
+            ),
+          ),
+        )
+      else
+        SliverPadding(
+          padding: EdgeInsets.symmetric(horizontal: horizontalPadding),
+          sliver: SliverList.builder(
+            itemCount: movements.length,
+            itemBuilder: (context, i) {
+              final m = movements[i];
+              return _MovementItemRow(
+                key: ValueKey(m.id),
+                movement: m,
+                isFirst: i == 0,
+                isLast: i == movements.length - 1,
+              );
+            },
+          ),
+        ),
+    ];
+  }
+
+  List<Widget> _purchasesSlivers(bool wide, double horizontalPadding) {
+    final purchases = _visiblePurchases;
+    final totalOwed = _balances.fold(0.0, (s, b) => s + b.amountOwed);
+
+    return [
+      SliverPadding(
+        padding: EdgeInsets.symmetric(horizontal: horizontalPadding),
+        sliver: SliverToBoxAdapter(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  border: Border.all(color: kBorder),
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Owed to suppliers',
+                      style: sans(
+                        12.5,
+                        weight: FontWeight.w600,
+                        color: kInkMuted,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'MK ${_fmtMk(totalOwed)}',
+                      style: mono(
+                        21,
+                        weight: FontWeight.w700,
+                        color: totalOwed > 0 ? kDanger : kInk,
+                      ),
+                    ),
+                    if (_balances.isNotEmpty) ...[
+                      const SizedBox(height: 10),
+                      for (final b in _balances)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 6),
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  b.supplierName,
+                                  style: sans(13, color: kInk),
+                                ),
+                              ),
+                              Text(
+                                'MK ${_fmtMk(b.amountOwed)}',
+                                style: mono(
+                                  13,
+                                  weight: FontWeight.w600,
+                                  color: kDanger,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                    ] else ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        'Nothing owed right now.',
+                        style: sans(12.5, color: kInkMuted),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                'Stock orders (${purchases.length})',
+                style: sans(13, weight: FontWeight.w600, color: kInkMuted),
+              ),
+              const SizedBox(height: 8),
+            ],
+          ),
+        ),
+      ),
+      if (purchases.isEmpty)
+        SliverPadding(
+          padding: EdgeInsets.symmetric(horizontal: horizontalPadding),
+          sliver: const SliverToBoxAdapter(
+            child: EmptyState(
+              icon: Icons.shopping_cart_outlined,
+              title: 'No purchase orders',
+              message: 'Orders recorded at branches will appear here.',
+            ),
+          ),
+        )
+      else
+        SliverPadding(
+          padding: EdgeInsets.symmetric(horizontal: horizontalPadding),
+          sliver: SliverList.separated(
+            itemCount: purchases.length,
+            separatorBuilder: (_, __) => const SizedBox(height: 8),
+            itemBuilder: (context, i) {
+              return _PurchaseOrderCard(
+                key: ValueKey(purchases[i].id),
+                purchase: purchases[i],
+              );
+            },
+          ),
+        ),
+    ];
+  }
+
+  List<Widget> _catalogSlivers(bool wide, double horizontalPadding) {
+    final items = _visibleCatalog;
+    return [
+      SliverPadding(
+        padding: EdgeInsets.symmetric(horizontal: horizontalPadding),
+        sliver: SliverToBoxAdapter(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      'Products (${items.length})',
+                      style: sans(
+                        13,
+                        weight: FontWeight.w600,
+                        color: kInkMuted,
+                      ),
+                    ),
+                  ),
+                  FilterPill(
+                    label: _showInactive
+                        ? 'Hiding discontinued'
+                        : 'Show discontinued',
+                    selected: _showInactive,
+                    onTap: () {
+                      setState(() {
+                        _showInactive = !_showInactive;
+                        _invalidateFilterCaches();
+                      });
+                    },
+                  ),
+                  const SizedBox(width: 8),
+                  FilledButton.icon(
+                    onPressed: () => _addOrEditItem(),
+                    style: primaryButtonStyle(height: 40),
+                    icon: const Icon(Icons.add, size: 17),
+                    label: const Text('Add item'),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+            ],
+          ),
+        ),
+      ),
+      if (items.isEmpty)
+        SliverPadding(
+          padding: EdgeInsets.symmetric(horizontal: horizontalPadding),
+          sliver: SliverToBoxAdapter(
+            child: EmptyState(
+              icon: Icons.category_outlined,
+              title: 'No products found',
+              message: 'Try a different search or category.',
+              action: FilledButton.icon(
+                onPressed: () => _addOrEditItem(),
+                style: primaryButtonStyle(height: 42),
+                icon: const Icon(Icons.add, size: 17),
+                label: const Text('Add item'),
+              ),
+            ),
+          ),
+        )
+      else
+        SliverPadding(
+          padding: EdgeInsets.symmetric(horizontal: horizontalPadding),
+          sliver: SliverList.separated(
+            itemCount: items.length,
+            separatorBuilder: (_, __) => const SizedBox(height: 8),
+            itemBuilder: (context, i) {
+              final c = items[i];
+              return _CatalogProductCard(
+                key: ValueKey(c.id),
+                item: c,
+                onEdit: () => _addOrEditItem(c),
+                onToggleActive: () => _toggleItemActive(c),
+              );
+            },
+          ),
+        ),
+    ];
+  }
+
+  List<Widget> _attentionSlivers(bool wide, double horizontalPadding) {
     final buckets = _expiryBuckets();
     final expiryCount = buckets.fold(0, (s, b) => s + b.length);
     final showLow = _attentionFilter == 0 || _attentionFilter == 1;
     final showExpiry = _attentionFilter == 0 || _attentionFilter == 2;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          child: Row(
+    final slivers = <Widget>[];
+
+    slivers.add(
+      SliverPadding(
+        padding: EdgeInsets.symmetric(horizontal: horizontalPadding),
+        sliver: SliverToBoxAdapter(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              FilterPill(
-                label: 'All (${_low.length + expiryCount})',
-                selected: _attentionFilter == 0,
-                onTap: () => setState(() => _attentionFilter = 0),
+              SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  children: [
+                    FilterPill(
+                      label: 'All (${_low.length + expiryCount})',
+                      selected: _attentionFilter == 0,
+                      onTap: () => setState(() => _attentionFilter = 0),
+                    ),
+                    const SizedBox(width: 8),
+                    FilterPill(
+                      label: 'Low stock (${_low.length})',
+                      selected: _attentionFilter == 1,
+                      onTap: () => setState(() => _attentionFilter = 1),
+                    ),
+                    const SizedBox(width: 8),
+                    FilterPill(
+                      label: 'Expiring ($expiryCount)',
+                      selected: _attentionFilter == 2,
+                      onTap: () => setState(() => _attentionFilter = 2),
+                    ),
+                  ],
+                ),
               ),
-              const SizedBox(width: 8),
-              FilterPill(
-                label: 'Low stock (${_low.length})',
-                selected: _attentionFilter == 1,
-                onTap: () => setState(() => _attentionFilter = 1),
-              ),
-              const SizedBox(width: 8),
-              FilterPill(
-                label: 'Expiring ($expiryCount)',
-                selected: _attentionFilter == 2,
-                onTap: () => setState(() => _attentionFilter = 2),
-              ),
+              const SizedBox(height: 16),
             ],
           ),
         ),
-        const SizedBox(height: 16),
-        if (showLow) ...[
-          Text(
-            'Low stock',
-            style: sans(16, weight: FontWeight.w700, color: kInk),
-          ),
-          const SizedBox(height: 10),
-          _LowStockTab(rows: _low, wide: wide),
-          const SizedBox(height: 20),
-        ],
-        if (showExpiry) ...[
-          Text(
-            'Expiring and expired',
-            style: sans(16, weight: FontWeight.w700, color: kInk),
-          ),
-          const SizedBox(height: 10),
-          _ExpiryTab(buckets: buckets, wide: wide, onAdjust: _adjust),
-        ],
-        if ((!showLow || _low.isEmpty) && (!showExpiry || expiryCount == 0))
-          const EmptyState(
-            icon: Icons.check_circle_outline,
-            title: 'Nothing needs attention',
-            message: 'Stock levels and expiry dates are currently healthy.',
-          ),
-      ],
+      ),
     );
+
+    if (showLow && _low.isNotEmpty) {
+      slivers.add(
+        SliverPadding(
+          padding: EdgeInsets.fromLTRB(
+            horizontalPadding,
+            0,
+            horizontalPadding,
+            10,
+          ),
+          sliver: SliverToBoxAdapter(
+            child: Text(
+              'Low stock',
+              style: sans(16, weight: FontWeight.w700, color: kInk),
+            ),
+          ),
+        ),
+      );
+      slivers.add(
+        SliverPadding(
+          padding: EdgeInsets.fromLTRB(
+            horizontalPadding,
+            0,
+            horizontalPadding,
+            20,
+          ),
+          sliver: SliverList.separated(
+            itemCount: _low.length,
+            separatorBuilder: (_, __) => const SizedBox(height: 8),
+            itemBuilder: (context, i) {
+              return _LowStockCard(
+                key: ValueKey('low_${_low[i].itemName}_${_low[i].branchName}'),
+                row: _low[i],
+              );
+            },
+          ),
+        ),
+      );
+    }
+
+    if (showExpiry && expiryCount > 0) {
+      slivers.add(
+        SliverPadding(
+          padding: EdgeInsets.fromLTRB(
+            horizontalPadding,
+            0,
+            horizontalPadding,
+            10,
+          ),
+          sliver: SliverToBoxAdapter(
+            child: Text(
+              'Expiring and expired',
+              style: sans(16, weight: FontWeight.w700, color: kInk),
+            ),
+          ),
+        ),
+      );
+      slivers.addAll(_expirySlivers(wide, horizontalPadding));
+    }
+
+    if ((!showLow || _low.isEmpty) && (!showExpiry || expiryCount == 0)) {
+      slivers.add(
+        SliverPadding(
+          padding: EdgeInsets.symmetric(horizontal: horizontalPadding),
+          sliver: const SliverToBoxAdapter(
+            child: EmptyState(
+              icon: Icons.check_circle_outline,
+              title: 'Nothing needs attention',
+              message: 'Stock levels and expiry dates are currently healthy.',
+            ),
+          ),
+        ),
+      );
+    }
+
+    return slivers;
   }
 
   Widget _filterBar(bool wide) {
@@ -843,7 +1521,12 @@ class _InventoryScreenState extends State<InventoryScreen> {
             'All Categories',
             style: sans(13.5, weight: FontWeight.w500, color: kInk),
           ),
-          onChanged: (v) => setState(() => _category = v),
+          onChanged: (v) {
+            setState(() {
+              _category = v;
+              _invalidateFilterCaches();
+            });
+          },
           items: [
             const DropdownMenuItem<String?>(
               value: null,
@@ -866,7 +1549,12 @@ class _InventoryScreenState extends State<InventoryScreen> {
             child: SearchField(
               hint: 'Search item, batch or branch…',
               controller: _searchCtrl,
-              onChanged: (v) => setState(() => _search = v),
+              onChanged: (v) {
+                setState(() {
+                  _search = v;
+                  _invalidateFilterCaches();
+                });
+              },
             ),
           ),
           const SizedBox(width: 10),
@@ -883,7 +1571,12 @@ class _InventoryScreenState extends State<InventoryScreen> {
           child: SearchField(
             hint: 'Search stock…',
             controller: _searchCtrl,
-            onChanged: (v) => setState(() => _search = v),
+            onChanged: (v) {
+              setState(() {
+                _search = v;
+                _invalidateFilterCaches();
+              });
+            },
           ),
         ),
         const SizedBox(width: 10),
@@ -902,6 +1595,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
               setState(() {
                 _branchId = res.branchId;
                 _category = res.category;
+                _invalidateFilterCaches();
               });
               if (res.branchChanged) await _load();
             }
@@ -914,49 +1608,6 @@ class _InventoryScreenState extends State<InventoryScreen> {
           ),
           label: const Text('Filters'),
         ),
-      ],
-    );
-  }
-
-  Widget _body(bool wide) {
-    if (_loading) {
-      return const Padding(
-        padding: EdgeInsets.only(top: 80),
-        child: Center(child: CircularProgressIndicator(color: kPrimary)),
-      );
-    }
-    if (_error != null) return ErrorState(message: _error!, onRetry: _load);
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Align(
-          alignment: Alignment.centerRight,
-          child: Wrap(
-            alignment: WrapAlignment.end,
-            spacing: 10,
-            runSpacing: 10,
-            children: [
-              FilledButton.icon(
-                onPressed: _loading ? null : _addStock,
-                style: primaryButtonStyle(height: 42),
-                icon: const Icon(Icons.add_box_outlined, size: 18),
-                label: const Text('Add stock'),
-              ),
-              OutlinedButton.icon(
-                onPressed: _loading ? null : () => _addOrEditItem(),
-                style: outlineButtonStyle(height: 42),
-                icon: const Icon(Icons.playlist_add_outlined, size: 18),
-                label: const Text('Add catalog item'),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 14),
-        _summaryCards(wide),
-        const SizedBox(height: 16),
-        _tabChips(),
-        const SizedBox(height: 14),
-        _tabContent(wide),
       ],
     );
   }
@@ -1032,64 +1683,6 @@ class _InventoryScreenState extends State<InventoryScreen> {
       ),
     );
   }
-
-  Widget _tabContent(bool wide) {
-    switch (_tab) {
-      case 0:
-        return _OverviewTab(
-          items: _visibleItems,
-          wide: wide,
-          showBranch: _branchId == null,
-          onAdjust: _adjust,
-          onEditPrices: _editPrices,
-        );
-      case 1:
-        return _LowStockTab(rows: _low, wide: wide);
-      case 2:
-        return _ExpiryTab(
-          buckets: _expiryBuckets(),
-          wide: wide,
-          onAdjust: _adjust,
-        );
-      case 3:
-        return _MovementsTab(
-          movements: _visibleMovements,
-          wide: wide,
-          selectedType: _movementType,
-          onTypeChanged: (t) => setState(() => _movementType = t),
-          activityLabel: _activityUserId == null
-              ? null
-              : 'Activity: ${_activityUserName ?? 'cashier'} · ${_fmtDate(_activityFrom?.toIso8601String())} – ${_fmtDate(_activityTo?.toIso8601String())}',
-          onClearActivity: _activityUserId == null
-              ? null
-              : () {
-                  setState(() {
-                    _activityUserId = null;
-                    _activityUserName = null;
-                    _activityFrom = null;
-                    _activityTo = null;
-                  });
-                  _load();
-                },
-        );
-      case 4:
-        return _PurchasesTab(
-          purchases: _visiblePurchases,
-          balances: _balances,
-          wide: wide,
-        );
-      default:
-        return _CatalogTab(
-          items: _visibleCatalog,
-          wide: wide,
-          showInactive: _showInactive,
-          onToggleInactive: (v) => setState(() => _showInactive = v),
-          onAdd: () => _addOrEditItem(),
-          onEdit: _addOrEditItem,
-          onToggleActive: _toggleItemActive,
-        );
-    }
-  }
 }
 
 // ============================================================================
@@ -1152,72 +1745,6 @@ class _SummaryCard extends StatelessWidget {
 // TAB 0 — STOCK OVERVIEW (expandable batches)
 // ============================================================================
 
-class _OverviewTab extends StatelessWidget {
-  final List<ItemStock> items;
-  final bool wide;
-  final bool showBranch;
-  final ValueChanged<StockBatch> onAdjust;
-  final ValueChanged<StockBatch> onEditPrices;
-  const _OverviewTab({
-    required this.items,
-    required this.wide,
-    required this.showBranch,
-    required this.onAdjust,
-    required this.onEditPrices,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    if (items.isEmpty) {
-      return const EmptyState(
-        icon: Icons.inventory_2_outlined,
-        title: 'No stock found',
-        message: 'Try a different branch, category or search.',
-      );
-    }
-    return Column(
-      children: [
-        if (wide) _overviewHeader(),
-        if (wide) const SizedBox(height: 8),
-        for (final it in items) ...[
-          _OverviewRow(
-            item: it,
-            wide: wide,
-            showBranch: showBranch,
-            onAdjust: onAdjust,
-            onEditPrices: onEditPrices,
-          ),
-          const SizedBox(height: 8),
-        ],
-      ],
-    );
-  }
-
-  Widget _overviewHeader() {
-    const style = TextStyle(
-      fontSize: 11.5,
-      fontWeight: FontWeight.w600,
-      color: kInkMuted,
-    );
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      child: Row(
-        children: const [
-          Expanded(flex: 3, child: Text('ITEM', style: style)),
-          Expanded(flex: 1, child: Text('ON HAND', style: style)),
-          Expanded(flex: 1, child: Text('REORDER', style: style)),
-          Expanded(flex: 1, child: Text('STATUS', style: style)),
-          Expanded(
-            flex: 1,
-            child: Text('VALUE', style: style, textAlign: TextAlign.right),
-          ),
-          SizedBox(width: 40),
-        ],
-      ),
-    );
-  }
-}
-
 class _OverviewRow extends StatelessWidget {
   final ItemStock item;
   final bool wide;
@@ -1225,6 +1752,7 @@ class _OverviewRow extends StatelessWidget {
   final ValueChanged<StockBatch> onAdjust;
   final ValueChanged<StockBatch> onEditPrices;
   const _OverviewRow({
+    super.key,
     required this.item,
     required this.wide,
     required this.showBranch,
@@ -1247,7 +1775,6 @@ class _OverviewRow extends StatelessWidget {
         border: Border.all(color: kBorder),
         borderRadius: BorderRadius.circular(4),
       ),
-      clipBehavior: Clip.antiAlias,
       child: ExpansionTile(
         tilePadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
         childrenPadding: EdgeInsets.zero,
@@ -1449,555 +1976,273 @@ class _BatchRow extends StatelessWidget {
 }
 
 // ============================================================================
-// TAB 1 — LOW STOCK (worst first)
+// ============================================================================
+// ITEM CARDS (virtualized sliver list rows)
 // ============================================================================
 
-class _LowStockTab extends StatelessWidget {
-  final List<LowStockRow> rows;
-  final bool wide;
-  const _LowStockTab({required this.rows, required this.wide});
+class _LowStockCard extends StatelessWidget {
+  final LowStockRow row;
+  const _LowStockCard({super.key, required this.row});
 
   @override
   Widget build(BuildContext context) {
-    if (rows.isEmpty) {
-      return const EmptyState(
-        icon: Icons.check_circle_outline,
-        title: 'Stock levels are healthy',
-        message: 'Nothing is at or below its reorder level for this filter.',
-      );
-    }
-    return Column(
-      children: [
-        for (final r in rows) ...[
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              border: Border.all(color: kBorder),
-              borderRadius: BorderRadius.circular(4),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        border: Border.all(color: kBorder),
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            r.itemName,
-                            style: sans(
-                              13.5,
-                              weight: FontWeight.w600,
-                              color: kInk,
-                            ),
-                          ),
-                          const SizedBox(height: 2),
-                          Text(r.branchName, style: sans(12, color: kInkMuted)),
-                        ],
-                      ),
+                    Text(
+                      row.itemName,
+                      style: sans(13.5, weight: FontWeight.w600, color: kInk),
                     ),
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.end,
-                      children: [
-                        Text(
-                          '${_fmtQty(r.qtyOnHand)} / ${_fmtQty(r.reorderLevel)}',
-                          style: mono(
-                            13,
-                            weight: FontWeight.w700,
-                            color: kWarn,
-                          ),
-                        ),
-                        Text(
-                          'on hand / reorder',
-                          style: sans(10.5, color: kInkMuted),
-                        ),
-                      ],
-                    ),
+                    const SizedBox(height: 2),
+                    Text(row.branchName, style: sans(12, color: kInkMuted)),
                   ],
                 ),
-                const SizedBox(height: 10),
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(3),
-                  child: LinearProgressIndicator(
-                    value: r.severity,
-                    minHeight: 5,
-                    backgroundColor: kWarnTint,
-                    valueColor: const AlwaysStoppedAnimation<Color>(kWarn),
+              ),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Text(
+                    '${_fmtQty(row.qtyOnHand)} / ${_fmtQty(row.reorderLevel)}',
+                    style: mono(13, weight: FontWeight.w700, color: kWarn),
                   ),
-                ),
-              ],
+                  Text(
+                    'on hand / reorder',
+                    style: sans(10.5, color: kInkMuted),
+                  ),
+                ],
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(3),
+            child: LinearProgressIndicator(
+              value: row.severity,
+              minHeight: 5,
+              backgroundColor: kWarnTint,
+              valueColor: const AlwaysStoppedAnimation<Color>(kWarn),
             ),
           ),
-          const SizedBox(height: 8),
         ],
-      ],
+      ),
     );
   }
 }
 
-// ============================================================================
-// TAB 2 — EXPIRY (grouped by urgency)
-// ============================================================================
-
-class _ExpiryTab extends StatelessWidget {
-  final List<List<StockBatch>> buckets;
-  final bool wide;
+class _ExpiryBatchCard extends StatelessWidget {
+  final StockBatch batch;
+  final bool isExpired;
   final ValueChanged<StockBatch> onAdjust;
-  const _ExpiryTab({
-    required this.buckets,
-    required this.wide,
+  const _ExpiryBatchCard({
+    super.key,
+    required this.batch,
+    required this.isExpired,
     required this.onAdjust,
   });
 
   @override
   Widget build(BuildContext context) {
-    const titles = [
-      'Already expired',
-      'Under 30 days',
-      '30 to 60 days',
-      '60 to 90 days',
-    ];
-    const subs = [
-      'Write off or remove from sale.',
-      'Discount or push first.',
-      'Plan to move soon.',
-      'Watch list.',
-    ];
-    final total = buckets.fold(0, (s, b) => s + b.length);
-    if (total == 0) {
-      return const EmptyState(
-        icon: Icons.check_circle_outline,
-        title: 'No batches expiring soon',
-        message: 'Nothing in scope expires within the next 90 days.',
-      );
-    }
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        for (int i = 0; i < buckets.length; i++)
-          if (buckets[i].isNotEmpty) ...[
-            Row(
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        '${titles[i]} (${buckets[i].length})',
-                        style: sans(
-                          13,
-                          weight: FontWeight.w700,
-                          color: i == 0 ? kDanger : kInk,
-                        ),
-                      ),
-                      Text(subs[i], style: sans(11.5, color: kInkMuted)),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            for (final b in buckets[i]) ...[
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 12,
-                ),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  border: Border.all(color: kBorder),
-                  borderRadius: BorderRadius.circular(4),
-                ),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            b.itemName,
-                            style: sans(
-                              13.5,
-                              weight: FontWeight.w600,
-                              color: kInk,
-                            ),
-                          ),
-                          const SizedBox(height: 2),
-                          Text(
-                            'Batch ${b.batchNumber} · ${b.branchName} · ${_fmtDate(b.expiryDate)} '
-                            '(${b.daysToExpiry! < 0 ? '${-b.daysToExpiry!}d overdue' : '${b.daysToExpiry!}d left'})',
-                            style: sans(11.5, color: kInkMuted),
-                          ),
-                          const SizedBox(height: 2),
-                          Text(
-                            '${_fmtQty(b.qtyAvailable)} on hand · MK ${_fmtMk(b.qtyAvailable * b.buyingPrice)} at risk',
-                            style: sans(
-                              11.5,
-                              weight: FontWeight.w600,
-                              color: i == 0 ? kDanger : kWarn,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    TextButton(
-                      onPressed: () => onAdjust(b),
-                      style: TextButton.styleFrom(
-                        padding: EdgeInsets.zero,
-                        minimumSize: Size.zero,
-                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                      ),
-                      child: Text(
-                        'Write off',
-                        style: sans(
-                          12.5,
-                          weight: FontWeight.w600,
-                          color: kPrimary,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 8),
-            ],
-            const SizedBox(height: 12),
-          ],
-      ],
-    );
-  }
-}
-
-// ============================================================================
-// TAB 3 — STOCK MOVEMENTS (audit trail)
-// ============================================================================
-
-class _MovementsTab extends StatelessWidget {
-  final List<StockMovement> movements;
-  final bool wide;
-  final String? selectedType;
-  final ValueChanged<String?> onTypeChanged;
-  final String? activityLabel;
-  final VoidCallback? onClearActivity;
-  const _MovementsTab({
-    required this.movements,
-    required this.wide,
-    required this.selectedType,
-    required this.onTypeChanged,
-    this.activityLabel,
-    this.onClearActivity,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        if (activityLabel != null) ...[
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
-            decoration: BoxDecoration(
-              color: kPrimaryTint,
-              borderRadius: BorderRadius.circular(4),
-            ),
-            child: Row(
-              children: [
-                const Icon(
-                  Icons.person_search_outlined,
-                  size: 17,
-                  color: kPrimary,
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    activityLabel!,
-                    style: sans(12.5, weight: FontWeight.w600, color: kPrimary),
-                  ),
-                ),
-                InkWell(
-                  onTap: onClearActivity,
-                  borderRadius: BorderRadius.circular(4),
-                  child: const Padding(
-                    padding: EdgeInsets.all(4),
-                    child: Icon(Icons.close, size: 16, color: kPrimary),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 10),
-        ],
-        SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          child: Row(
-            children: [
-              FilterPill(
-                label: 'All types',
-                selected: selectedType == null,
-                onTap: () => onTypeChanged(null),
-              ),
-              const SizedBox(width: 8),
-              for (final t in _kMovementTypes) ...[
-                FilterPill(
-                  label: _movementMeta(t).label,
-                  selected: selectedType == t,
-                  onTap: () => onTypeChanged(selectedType == t ? null : t),
-                ),
-                const SizedBox(width: 8),
-              ],
-            ],
-          ),
-        ),
-        const SizedBox(height: 12),
-        if (movements.isEmpty)
-          const EmptyState(
-            icon: Icons.history_outlined,
-            title: 'No movements found',
-            message: 'Try a different type, branch or search.',
-          )
-        else
-          Container(
-            decoration: BoxDecoration(
-              color: Colors.white,
-              border: Border.all(color: kBorder),
-              borderRadius: BorderRadius.circular(4),
-            ),
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        border: Border.all(color: kBorder),
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
             child: Column(
-              children: List.generate(movements.length, (i) {
-                final m = movements[i];
-                final meta = _movementMeta(m.type);
-                return Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 12,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  batch.itemName,
+                  style: sans(13.5, weight: FontWeight.w600, color: kInk),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  'Batch ${batch.batchNumber} · ${batch.branchName} · ${_fmtDate(batch.expiryDate)} '
+                  '(${batch.daysToExpiry != null && batch.daysToExpiry! < 0 ? '${-batch.daysToExpiry!}d overdue' : '${batch.daysToExpiry ?? 0}d left'})',
+                  style: sans(11.5, color: kInkMuted),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  '${_fmtQty(batch.qtyAvailable)} on hand · MK ${_fmtMk(batch.qtyAvailable * batch.buyingPrice)} at risk',
+                  style: sans(
+                    11.5,
+                    weight: FontWeight.w600,
+                    color: isExpired ? kDanger : kWarn,
                   ),
-                  decoration: BoxDecoration(
-                    border: i == movements.length - 1
-                        ? null
-                        : const Border(bottom: BorderSide(color: kBorder)),
-                  ),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Padding(
-                        padding: const EdgeInsets.only(top: 2),
-                        child: Icon(meta.icon, size: 18, color: meta.color),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              m.itemName,
-                              style: sans(
-                                13,
-                                weight: FontWeight.w600,
-                                color: kInk,
-                              ),
-                            ),
-                            const SizedBox(height: 2),
-                            Text(
-                              '${m.branchName} · ${meta.label} · ${_fmtDateTime(m.createdAt)}${m.performedByName != null && m.performedByName!.trim().isNotEmpty ? ' · by ${m.performedByName!.trim()}' : ''}',
-                              style: sans(11.5, color: kInkMuted),
-                            ),
-                            if ((m.notes ?? '').trim().isNotEmpty) ...[
-                              const SizedBox(height: 2),
-                              Text(
-                                '“${m.notes!.trim()}”',
-                                style: sans(
-                                  11.5,
-                                  color: kInkMuted,
-                                  height: 1.35,
-                                ),
-                              ),
-                            ],
-                          ],
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      Text(
-                        '${meta.isOut ? '−' : '+'}${_fmtQty(m.quantity)}',
-                        style: mono(
-                          13,
-                          weight: FontWeight.w700,
-                          color: meta.color,
-                        ),
-                      ),
-                    ],
-                  ),
-                );
-              }),
+                ),
+              ],
             ),
           ),
-      ],
+          TextButton(
+            onPressed: () => onAdjust(batch),
+            style: TextButton.styleFrom(
+              padding: EdgeInsets.zero,
+              minimumSize: Size.zero,
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            ),
+            child: Text(
+              'Write off',
+              style: sans(12.5, weight: FontWeight.w600, color: kPrimary),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
 
-// ============================================================================
-// TAB 4 — PURCHASES + SUPPLIER BALANCES
-// ============================================================================
-
-class _PurchasesTab extends StatelessWidget {
-  final List<PurchaseOrder> purchases;
-  final List<SupplierBalance> balances;
-  final bool wide;
-  const _PurchasesTab({
-    required this.purchases,
-    required this.balances,
-    required this.wide,
+class _MovementItemRow extends StatelessWidget {
+  final StockMovement movement;
+  final bool isFirst;
+  final bool isLast;
+  const _MovementItemRow({
+    super.key,
+    required this.movement,
+    required this.isFirst,
+    required this.isLast,
   });
 
   @override
   Widget build(BuildContext context) {
-    final totalOwed = balances.fold(0.0, (s, b) => s + b.amountOwed);
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Container(
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            border: Border.all(color: kBorder),
-            borderRadius: BorderRadius.circular(4),
+    final meta = _movementMeta(movement.type);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        border: Border(
+          left: const BorderSide(color: kBorder),
+          right: const BorderSide(color: kBorder),
+          top: isFirst ? const BorderSide(color: kBorder) : BorderSide.none,
+          bottom: const BorderSide(color: kBorder),
+        ),
+        borderRadius: BorderRadius.vertical(
+          top: isFirst ? const Radius.circular(4) : Radius.zero,
+          bottom: isLast ? const Radius.circular(4) : Radius.zero,
+        ),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(top: 2),
+            child: Icon(meta.icon, size: 18, color: meta.color),
           ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Owed to suppliers',
-                style: sans(12.5, weight: FontWeight.w600, color: kInkMuted),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                'MK ${_fmtMk(totalOwed)}',
-                style: mono(
-                  21,
-                  weight: FontWeight.w700,
-                  color: totalOwed > 0 ? kDanger : kInk,
-                ),
-              ),
-              if (balances.isNotEmpty) ...[
-                const SizedBox(height: 10),
-                for (final b in balances)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 6),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            b.supplierName,
-                            style: sans(13, color: kInk),
-                          ),
-                        ),
-                        Text(
-                          'MK ${_fmtMk(b.amountOwed)}',
-                          style: mono(
-                            13,
-                            weight: FontWeight.w600,
-                            color: kDanger,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-              ] else ...[
-                const SizedBox(height: 4),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
                 Text(
-                  'Nothing owed right now.',
-                  style: sans(12.5, color: kInkMuted),
+                  movement.itemName,
+                  style: sans(13, weight: FontWeight.w600, color: kInk),
                 ),
-              ],
-            ],
-          ),
-        ),
-        const SizedBox(height: 16),
-        Text(
-          'Stock orders (${purchases.length})',
-          style: sans(13, weight: FontWeight.w600, color: kInkMuted),
-        ),
-        const SizedBox(height: 8),
-        if (purchases.isEmpty)
-          const EmptyState(
-            icon: Icons.shopping_cart_outlined,
-            title: 'No purchase orders',
-            message: 'Orders recorded at branches will appear here.',
-          )
-        else
-          for (final p in purchases) ...[
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                border: Border.all(color: kBorder),
-                borderRadius: BorderRadius.circular(4),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          p.invoiceNumber == '—'
-                              ? p.supplierName
-                              : '${p.supplierName} · ${p.invoiceNumber}',
-                          style: sans(
-                            13.5,
-                            weight: FontWeight.w600,
-                            color: kInk,
-                          ),
-                        ),
-                      ),
-                      _PaymentPill(status: p.paymentStatus),
-                    ],
-                  ),
-                  const SizedBox(height: 4),
+                const SizedBox(height: 2),
+                Text(
+                  '${movement.branchName} · ${meta.label} · ${_fmtDateTime(movement.createdAt)}${movement.performedByName != null && movement.performedByName!.trim().isNotEmpty ? ' · by ${movement.performedByName!.trim()}' : ''}',
+                  style: sans(11.5, color: kInkMuted),
+                ),
+                if ((movement.notes ?? '').trim().isNotEmpty) ...[
+                  const SizedBox(height: 2),
                   Text(
-                    '${p.branchName} · ${_fmtDate(p.purchaseDate)} · ${p.lineCount} ${p.lineCount == 1 ? 'line' : 'lines'}',
-                    style: sans(12, color: kInkMuted),
-                  ),
-                  const SizedBox(height: 8),
-                  Row(
-                    children: [
-                      Text(
-                        'MK ${_fmtMk(p.totalAmount)}',
-                        style: mono(14, weight: FontWeight.w700, color: kInk),
-                      ),
-                      const SizedBox(width: 10),
-                      Text(
-                        'paid MK ${_fmtMk(p.amountPaid)}',
-                        style: sans(12, color: kInkMuted),
-                      ),
-                      const Spacer(),
-                      if (p.balance > 0)
-                        Text(
-                          'owes MK ${_fmtMk(p.balance)}',
-                          style: sans(
-                            12,
-                            weight: FontWeight.w700,
-                            color: kDanger,
-                          ),
-                        ),
-                    ],
+                    '“${movement.notes!.trim()}”',
+                    style: sans(11.5, color: kInkMuted, height: 1.35),
                   ),
                 ],
-              ),
+              ],
             ),
-            const SizedBox(height: 8),
-          ],
-      ],
+          ),
+          const SizedBox(width: 10),
+          Text(
+            '${meta.isOut ? '−' : '+'}${_fmtQty(movement.quantity)}',
+            style: mono(13, weight: FontWeight.w700, color: meta.color),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _PurchaseOrderCard extends StatelessWidget {
+  final PurchaseOrder purchase;
+  const _PurchaseOrderCard({super.key, required this.purchase});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        border: Border.all(color: kBorder),
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  purchase.invoiceNumber == '—'
+                      ? purchase.supplierName
+                      : '${purchase.supplierName} · ${purchase.invoiceNumber}',
+                  style: sans(13.5, weight: FontWeight.w600, color: kInk),
+                ),
+              ),
+              _PaymentPill(status: purchase.paymentStatus),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text(
+            '${purchase.branchName} · ${_fmtDate(purchase.purchaseDate)} · ${purchase.lineCount} ${purchase.lineCount == 1 ? 'line' : 'lines'}',
+            style: sans(12, color: kInkMuted),
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Text(
+                'MK ${_fmtMk(purchase.totalAmount)}',
+                style: mono(14, weight: FontWeight.w700, color: kInk),
+              ),
+              const SizedBox(width: 10),
+              Text(
+                'paid MK ${_fmtMk(purchase.amountPaid)}',
+                style: sans(12, color: kInkMuted),
+              ),
+              const Spacer(),
+              if (purchase.balance > 0)
+                Text(
+                  'owes MK ${_fmtMk(purchase.balance)}',
+                  style: sans(12, weight: FontWeight.w700, color: kDanger),
+                ),
+            ],
+          ),
+        ],
+      ),
     );
   }
 }
 
 class _PaymentPill extends StatelessWidget {
   final String status;
-  const _PaymentPill({required this.status});
+  const _PaymentPill({super.key, required this.status});
   @override
   Widget build(BuildContext context) {
     switch (status) {
@@ -2011,142 +2256,84 @@ class _PaymentPill extends StatelessWidget {
   }
 }
 
-// ============================================================================
-// TAB 5 — ITEM CATALOG (the one place the admin edits data)
-// ============================================================================
+class _CatalogProductCard extends StatelessWidget {
+  final CatalogItem item;
+  final VoidCallback onEdit;
+  final VoidCallback onToggleActive;
 
-class _CatalogTab extends StatelessWidget {
-  final List<CatalogItem> items;
-  final bool wide;
-  final bool showInactive;
-  final ValueChanged<bool> onToggleInactive;
-  final VoidCallback onAdd;
-  final ValueChanged<CatalogItem> onEdit;
-  final ValueChanged<CatalogItem> onToggleActive;
-  const _CatalogTab({
-    required this.items,
-    required this.wide,
-    required this.showInactive,
-    required this.onToggleInactive,
-    required this.onAdd,
+  const _CatalogProductCard({
+    super.key,
+    required this.item,
     required this.onEdit,
     required this.onToggleActive,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Row(
-          children: [
-            Expanded(
-              child: Text(
-                'Products (${items.length})',
-                style: sans(13, weight: FontWeight.w600, color: kInkMuted),
-              ),
-            ),
-            FilterPill(
-              label: showInactive ? 'Hiding discontinued' : 'Show discontinued',
-              selected: showInactive,
-              onTap: () => onToggleInactive(!showInactive),
-            ),
-            const SizedBox(width: 8),
-            FilledButton.icon(
-              onPressed: onAdd,
-              style: primaryButtonStyle(height: 40),
-              icon: const Icon(Icons.add, size: 17),
-              label: const Text('Add item'),
-            ),
-          ],
-        ),
-        const SizedBox(height: 10),
-        if (items.isEmpty)
-          EmptyState(
-            icon: Icons.category_outlined,
-            title: 'No products found',
-            message: 'Try a different search or category.',
-            action: FilledButton.icon(
-              onPressed: onAdd,
-              style: primaryButtonStyle(height: 42),
-              icon: const Icon(Icons.add, size: 17),
-              label: const Text('Add item'),
-            ),
-          )
-        else
-          for (final c in items) ...[
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                border: Border.all(color: kBorder),
-                borderRadius: BorderRadius.circular(4),
-              ),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            Flexible(
-                              child: Text(
-                                c.name,
-                                style: sans(
-                                  13.5,
-                                  weight: FontWeight.w600,
-                                  color: c.isActive ? kInk : kInkMuted,
-                                ),
-                              ),
-                            ),
-                            if (c.requiresPrescription) ...[
-                              const SizedBox(width: 6),
-                              const StatusPill(
-                                label: 'Rx',
-                                bg: kPrimaryTint,
-                                fg: kPrimary,
-                              ),
-                            ],
-                            if (!c.isActive) ...[
-                              const SizedBox(width: 6),
-                              const StatusPill(
-                                label: 'Stopped',
-                                bg: kSurface,
-                                fg: kInkMuted,
-                              ),
-                            ],
-                          ],
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        border: Border.all(color: kBorder),
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Flexible(
+                      child: Text(
+                        item.name,
+                        style: sans(
+                          13.5,
+                          weight: FontWeight.w600,
+                          color: item.isActive ? kInk : kInkMuted,
                         ),
-                        const SizedBox(height: 2),
-                        Text(
-                          '${c.businessTypeName} · ${c.category} · ${c.unit}${c.quantityStep != 1 ? ' · step ${fmtQty(c.quantityStep)}' : ''}${c.units.isNotEmpty ? ' · extra: ${c.units.map((u) => '${u.name} (${fmtQty(u.factor)})').join(', ')}' : ''} · reorder at ${_fmtQty(c.reorderLevel)}',
-                          style: sans(11.5, color: kInkMuted),
-                        ),
-                      ],
+                      ),
                     ),
-                  ),
-                  IconButton(
-                    icon: const Icon(
-                      Icons.edit_outlined,
-                      size: 18,
-                      color: kInkMuted,
-                    ),
-                    tooltip: 'Edit',
-                    onPressed: () => onEdit(c),
-                  ),
-                  Switch(
-                    value: c.isActive,
-                    activeThumbColor: kPrimary,
-                    onChanged: (_) => onToggleActive(c),
-                  ),
-                ],
-              ),
+                    if (item.requiresPrescription) ...[
+                      const SizedBox(width: 6),
+                      const StatusPill(
+                        label: 'Rx',
+                        bg: kPrimaryTint,
+                        fg: kPrimary,
+                      ),
+                    ],
+                    if (!item.isActive) ...[
+                      const SizedBox(width: 6),
+                      const StatusPill(
+                        label: 'Stopped',
+                        bg: kSurface,
+                        fg: kInkMuted,
+                      ),
+                    ],
+                  ],
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  '${item.businessTypeName} · ${item.category} · ${item.unit}${item.quantityStep != 1 ? ' · step ${fmtQty(item.quantityStep)}' : ''}${item.units.isNotEmpty ? ' · extra: ${item.units.map((u) => '${u.name} (${fmtQty(u.factor)})').join(', ')}' : ''} · reorder at ${_fmtQty(item.reorderLevel)}',
+                  style: sans(11.5, color: kInkMuted),
+                ),
+              ],
             ),
-            const SizedBox(height: 8),
-          ],
-      ],
+          ),
+          IconButton(
+            icon: const Icon(Icons.edit_outlined, size: 18, color: kInkMuted),
+            tooltip: 'Edit',
+            onPressed: onEdit,
+          ),
+          Switch(
+            value: item.isActive,
+            activeThumbColor: kPrimary,
+            onChanged: (_) => onToggleActive(),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -2375,8 +2562,10 @@ class _AddStockSheetState extends State<_AddStockSheet> {
         : null;
 
     if (selectedItem != null && !onStep(baseQty, selectedItem.quantityStep)) {
-      setState(() => _error =
-          'Quantity in ${selectedItem.unit} must be a multiple of ${fmtQty(selectedItem.quantityStep)}.');
+      setState(
+        () => _error =
+            'Quantity in ${selectedItem.unit} must be a multiple of ${fmtQty(selectedItem.quantityStep)}.',
+      );
       return;
     }
 
@@ -2447,9 +2636,9 @@ class _AddStockSheetState extends State<_AddStockSheet> {
                 ? null
                 : (value) {
                     final it = widget.items.cast<CatalogItem?>().firstWhere(
-                          (i) => i?.id == value,
-                          orElse: () => null,
-                        );
+                      (i) => i?.id == value,
+                      orElse: () => null,
+                    );
                     setState(() {
                       _itemId = value;
                       _selectedUnit = it?.unit;
@@ -2457,32 +2646,39 @@ class _AddStockSheetState extends State<_AddStockSheet> {
                   },
           ),
           if (_itemId != null) ...[
-            Builder(builder: (context) {
-              final it = widget.items.cast<CatalogItem?>().firstWhere(
-                    (i) => i?.id == _itemId,
-                    orElse: () => null,
-                  );
-              if (it == null || it.units.isEmpty) return const SizedBox.shrink();
-              return Padding(
-                padding: const EdgeInsets.only(top: 12),
-                child: DropdownButtonFormField<String>(
-                  initialValue: _selectedUnit ?? it.unit,
-                  decoration: fieldDecoration('Receiving unit'),
-                  items: [
-                    DropdownMenuItem(
-                      value: it.unit,
-                      child: Text('${it.unit} (base unit)'),
-                    ),
-                    for (final u in it.units)
+            Builder(
+              builder: (context) {
+                final it = widget.items.cast<CatalogItem?>().firstWhere(
+                  (i) => i?.id == _itemId,
+                  orElse: () => null,
+                );
+                if (it == null || it.units.isEmpty)
+                  return const SizedBox.shrink();
+                return Padding(
+                  padding: const EdgeInsets.only(top: 12),
+                  child: DropdownButtonFormField<String>(
+                    initialValue: _selectedUnit ?? it.unit,
+                    decoration: fieldDecoration('Receiving unit'),
+                    items: [
                       DropdownMenuItem(
-                        value: u.name,
-                        child: Text('${u.name} (= ${fmtQty(u.factor)} ${it.unit})'),
+                        value: it.unit,
+                        child: Text('${it.unit} (base unit)'),
                       ),
-                  ],
-                  onChanged: _saving ? null : (v) => setState(() => _selectedUnit = v),
-                ),
-              );
-            }),
+                      for (final u in it.units)
+                        DropdownMenuItem(
+                          value: u.name,
+                          child: Text(
+                            '${u.name} (= ${fmtQty(u.factor)} ${it.unit})',
+                          ),
+                        ),
+                    ],
+                    onChanged: _saving
+                        ? null
+                        : (v) => setState(() => _selectedUnit = v),
+                  ),
+                );
+              },
+            ),
           ],
           const SizedBox(height: 12),
           Row(
@@ -2985,11 +3181,17 @@ class _ItemFormSheetState extends State<_ItemFormSheet> {
       final f = double.tryParse(r.factorCtrl.text.trim());
       if (n.isEmpty && r.factorCtrl.text.trim().isEmpty) continue;
       if (n.isEmpty || f == null || f <= 0) {
-        setState(() => _formError = 'Each extra unit needs a name and a number above zero.');
+        setState(
+          () => _formError =
+              'Each extra unit needs a name and a number above zero.',
+        );
         return;
       }
-      if (n.toLowerCase() == baseUnit.toLowerCase() || !seen.add(n.toLowerCase())) {
-        setState(() => _formError = '"$n" is repeated or equals the base unit.');
+      if (n.toLowerCase() == baseUnit.toLowerCase() ||
+          !seen.add(n.toLowerCase())) {
+        setState(
+          () => _formError = '"$n" is repeated or equals the base unit.',
+        );
         return;
       }
       units.add(QtyUnit(n, f));
@@ -3005,18 +3207,25 @@ class _ItemFormSheetState extends State<_ItemFormSheet> {
         matches.removeWhere((c) => c.id == widget.item!.id);
       }
       if (matches.isNotEmpty && mounted) {
-        final enteredUnit =
-            _unit.text.trim().isEmpty ? 'unit' : _unit.text.trim();
-        final sameUnit = matches.where(
-          (c) => c.unit.trim().toLowerCase() == enteredUnit.toLowerCase(),
-        ).toList();
+        final enteredUnit = _unit.text.trim().isEmpty
+            ? 'unit'
+            : _unit.text.trim();
+        final sameUnit = matches
+            .where(
+              (c) => c.unit.trim().toLowerCase() == enteredUnit.toLowerCase(),
+            )
+            .toList();
         if (sameUnit.isNotEmpty) {
           final listed = sameUnit
               .take(3)
-              .map((c) => '• ${c.name} (unit: ${c.unit} · ${c.businessTypeName})')
+              .map(
+                (c) => '• ${c.name} (unit: ${c.unit} · ${c.businessTypeName})',
+              )
               .join('\n');
-          setState(() => _formError =
-              '“${_name.text.trim()}” is already in the catalog with the same unit ($enteredUnit):\n$listed\nThat is the same item — pick it from the catalog instead of adding it again.');
+          setState(
+            () => _formError =
+                '“${_name.text.trim()}” is already in the catalog with the same unit ($enteredUnit):\n$listed\nThat is the same item — pick it from the catalog instead of adding it again.',
+          );
           return;
         }
         final listed = matches
@@ -3311,7 +3520,8 @@ class _ItemFormSheetState extends State<_ItemFormSheet> {
         builder: (ctx, setDlg) {
           return SheetFrame(
             title: 'Convert base unit',
-            subtitle: 'Splits "${item.name}" into a smaller unit. Existing stock and prices will adjust automatically.',
+            subtitle:
+                'Splits "${item.name}" into a smaller unit. Existing stock and prices will adjust automatically.',
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
@@ -3323,12 +3533,17 @@ class _ItemFormSheetState extends State<_ItemFormSheet> {
                 TextField(
                   controller: newUnitCtrl,
                   style: sans(14, color: kInk),
-                  decoration: fieldDecoration('New base unit name', hint: 'e.g. ml, g, tablet'),
+                  decoration: fieldDecoration(
+                    'New base unit name',
+                    hint: 'e.g. ml, g, tablet',
+                  ),
                 ),
                 const SizedBox(height: 12),
                 TextField(
                   controller: factorCtrl,
-                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                  ),
                   style: sans(14, color: kInk),
                   decoration: fieldDecoration(
                     'How many new units in 1 ${item.unit}?',
@@ -3338,13 +3553,21 @@ class _ItemFormSheetState extends State<_ItemFormSheet> {
                 const SizedBox(height: 12),
                 TextField(
                   controller: stepCtrl,
-                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                  ),
                   style: sans(14, color: kInk),
-                  decoration: fieldDecoration('Smallest sale step in new units', hint: 'e.g. 1, 0.5, 10'),
+                  decoration: fieldDecoration(
+                    'Smallest sale step in new units',
+                    hint: 'e.g. 1, 0.5, 10',
+                  ),
                 ),
                 if (error != null) ...[
                   const SizedBox(height: 8),
-                  Text(error!, style: sans(12.5, weight: FontWeight.w600, color: kDanger)),
+                  Text(
+                    error!,
+                    style: sans(12.5, weight: FontWeight.w600, color: kDanger),
+                  ),
                 ],
                 const SizedBox(height: 16),
                 FilledButton(
@@ -3357,11 +3580,16 @@ class _ItemFormSheetState extends State<_ItemFormSheet> {
                       return;
                     }
                     if (factor == null || factor <= 0) {
-                      setDlg(() => error = 'Conversion factor must be greater than zero.');
+                      setDlg(
+                        () => error =
+                            'Conversion factor must be greater than zero.',
+                      );
                       return;
                     }
                     if (step == null || step <= 0) {
-                      setDlg(() => error = 'Sale step must be greater than zero.');
+                      setDlg(
+                        () => error = 'Sale step must be greater than zero.',
+                      );
                       return;
                     }
                     try {
@@ -3372,7 +3600,8 @@ class _ItemFormSheetState extends State<_ItemFormSheet> {
                         step: step,
                       );
                       if (ctx.mounted) Navigator.of(ctx).pop(true);
-                      if (mounted) Navigator.of(context).pop('Item converted to $nu.');
+                      if (mounted)
+                        Navigator.of(context).pop('Item converted to $nu.');
                     } on InventoryException catch (e) {
                       setDlg(() => error = e.message);
                     } catch (e) {
@@ -3398,8 +3627,8 @@ class _UnitRowForm {
   _UnitRowForm({
     TextEditingController? nameCtrl,
     TextEditingController? factorCtrl,
-  })  : nameCtrl = nameCtrl ?? TextEditingController(),
-        factorCtrl = factorCtrl ?? TextEditingController();
+  }) : nameCtrl = nameCtrl ?? TextEditingController(),
+       factorCtrl = factorCtrl ?? TextEditingController();
 
   void dispose() {
     nameCtrl.dispose();

@@ -362,7 +362,11 @@ class _ErrorState extends StatelessWidget {
           const SizedBox(height: 6),
           Text(message, style: _sans(12.5, color: _kInkMuted)),
           const SizedBox(height: 12),
-          OutlinedButton(onPressed: onRetry, style: outlineButtonStyle(), child: const Text('Retry')),
+          OutlinedButton(
+            onPressed: onRetry,
+            style: outlineButtonStyle(),
+            child: const Text('Retry'),
+          ),
         ],
       ),
     );
@@ -593,60 +597,58 @@ class _DesktopLayout extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 28),
-        IntrinsicHeight(
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                flex: 5,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _SectionLabel('Sales by branch'),
-                    const SizedBox(height: 8),
-                    _BranchSalesList(branches: data.branchSales),
-                  ],
-                ),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              flex: 5,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _SectionLabel('Sales by branch'),
+                  const SizedBox(height: 8),
+                  _BranchSalesList(branches: data.branchSales),
+                ],
               ),
-              const SizedBox(width: 32),
-              Expanded(
-                flex: 6,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        _SectionLabel(
-                          'Needs attention (${data.attentionItems.length})',
+            ),
+            const SizedBox(width: 32),
+            Expanded(
+              flex: 6,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      _SectionLabel(
+                        'Needs attention (${data.attentionItems.length})',
+                      ),
+                      const Spacer(),
+                      TextButton(
+                        onPressed: () => _openAttentionPage(context),
+                        style: TextButton.styleFrom(
+                          padding: EdgeInsets.zero,
+                          minimumSize: Size.zero,
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                         ),
-                        const Spacer(),
-                        TextButton(
-                          onPressed: () => _openAttentionPage(context),
-                          style: TextButton.styleFrom(
-                            padding: EdgeInsets.zero,
-                            minimumSize: Size.zero,
-                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                          ),
-                          child: Text(
-                            'View all',
-                            style: _sans(
-                              12.5,
-                              weight: FontWeight.w600,
-                              color: _kPrimary,
-                            ),
+                        child: Text(
+                          'View all',
+                          style: _sans(
+                            12.5,
+                            weight: FontWeight.w600,
+                            color: _kPrimary,
                           ),
                         ),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                    _AttentionInlineList(
-                      items: data.attentionItems.take(4).toList(),
-                    ),
-                  ],
-                ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  _AttentionInlineList(
+                    items: data.attentionItems.take(4).toList(),
+                  ),
+                ],
               ),
-            ],
-          ),
+            ),
+          ],
         ),
         const SizedBox(height: 28),
         _ExpensesSection(
@@ -710,11 +712,7 @@ class _StatMetric extends StatelessWidget {
         const SizedBox(height: 6),
         Text(
           value,
-          style: _mono(
-            22,
-            weight: FontWeight.w700,
-            color: valueColor ?? _kInk,
-          ),
+          style: _mono(22, weight: FontWeight.w700, color: valueColor ?? _kInk),
         ),
         const SizedBox(height: 3),
         Text(sub, style: _sans(12, color: _kInkMuted)),
@@ -757,11 +755,7 @@ class _BranchSalesList extends StatelessWidget {
                   Expanded(
                     child: Text(
                       b.branchName,
-                      style: _sans(
-                        13.5,
-                        weight: FontWeight.w500,
-                        color: _kInk,
-                      ),
+                      style: _sans(13.5, weight: FontWeight.w500, color: _kInk),
                     ),
                   ),
                   Text(
@@ -889,11 +883,7 @@ class _ExpenseRow extends StatelessWidget {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
-        Icon(
-          _expenseIcon(expense.category),
-          size: 18,
-          color: _kInkMuted,
-        ),
+        Icon(_expenseIcon(expense.category), size: 18, color: _kInkMuted),
         const SizedBox(width: 12),
         Expanded(
           child: Column(
@@ -1017,8 +1007,22 @@ class _StockAccessCard extends StatefulWidget {
 }
 
 class _StockAccessCardState extends State<_StockAccessCard> {
-  late final Future<List<StockAccessRequest>> _future =
-      StockAccessRepository().fetchAll();
+  late final Future<List<StockAccessRequest>> _future;
+
+  @override
+  void initState() {
+    super.initState();
+    _future = StockAccessRepository().fetchAll();
+    _future
+        .then((rows) {
+          if (mounted) {
+            stockAccessPendingCount.value = rows
+                .where((r) => r.isPending)
+                .length;
+          }
+        })
+        .catchError((_) {});
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1028,8 +1032,6 @@ class _StockAccessCardState extends State<_StockAccessCard> {
         final rows = snap.data ?? [];
         final waiting = rows.where((r) => r.isPending).length;
         final active = rows.where((r) => r.isActive).length;
-        // Keep the Users nav badge fresh even if the Users tab never opens.
-        if (snap.hasData) stockAccessPendingCount.value = waiting;
         final title = snap.hasError
             ? 'Stock access'
             : waiting == 0 && active == 0
@@ -1098,8 +1100,22 @@ class _CatalogAccessCard extends StatefulWidget {
 }
 
 class _CatalogAccessCardState extends State<_CatalogAccessCard> {
-  late final Future<List<CatalogAccessRequest>> _future =
-      CatalogAccessRepository().fetchAll();
+  late final Future<List<CatalogAccessRequest>> _future;
+
+  @override
+  void initState() {
+    super.initState();
+    _future = CatalogAccessRepository().fetchAll();
+    _future
+        .then((rows) {
+          if (mounted) {
+            catalogAccessPendingCount.value = rows
+                .where((r) => r.isPending)
+                .length;
+          }
+        })
+        .catchError((_) {});
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1109,8 +1125,6 @@ class _CatalogAccessCardState extends State<_CatalogAccessCard> {
         final rows = snap.data ?? [];
         final waiting = rows.where((r) => r.isPending).length;
         final active = rows.where((r) => r.isActive).length;
-        // Keep the Users nav badge fresh even if the Users tab never opens.
-        if (snap.hasData) catalogAccessPendingCount.value = waiting;
         final title = snap.hasError
             ? 'Catalog access'
             : waiting == 0 && active == 0
