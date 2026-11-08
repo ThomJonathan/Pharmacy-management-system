@@ -250,7 +250,9 @@ class CatalogItem {
 }
 
 class InventoryRepository {
-  final SupabaseClient _client = Supabase.instance.client;
+  InventoryRepository({SupabaseClient? client}) : _client = client ?? Supabase.instance.client;
+
+  final SupabaseClient _client;
 
   Future<List<InvBranch>> fetchBranches() async {
     final rows =
@@ -266,12 +268,18 @@ class InventoryRepository {
   }
 
   Future<List<String>> fetchCategories() async {
-    final rows =
-        await _client.from('items').select('category').limit(2000) as List;
     final cats = <String>{};
-    for (final r in rows) {
-      final c = (r['category'] as String?)?.trim();
-      if (c != null && c.isNotEmpty) cats.add(c);
+    String? lastId;
+    while (true) {
+      dynamic q = _client.from('items').select('id, category');
+      if (lastId != null) q = q.gt('id', lastId);
+      final page = await q.order('id').limit(1000) as List;
+      if (page.isEmpty) break;
+      for (final r in page) {
+        final c = (r['category'] as String?)?.trim();
+        if (c != null && c.isNotEmpty) cats.add(c);
+      }
+      lastId = page.last['id'] as String;
     }
     final sorted = cats.toList()..sort();
     return sorted;
@@ -283,7 +291,7 @@ class InventoryRepository {
   Future<List<ItemStock>> fetchOverview({String? branchId}) async {
     const pageSize = 1000;
     final rows = <dynamic>[];
-    int from = 0;
+    String? lastId;
 
     while (true) {
       dynamic q = _client
@@ -295,12 +303,14 @@ class InventoryRepository {
             'branches(name)',
           );
       if (branchId != null) q = q.eq('branch_id', branchId);
+      if (lastId != null) q = q.gt('id', lastId);
       final page = await q
           .gt('quantity_available', 0)
-          .range(from, from + pageSize - 1) as List;
+          .order('id')
+          .limit(pageSize) as List;
+      if (page.isEmpty) break;
       rows.addAll(page);
-      if (page.length < pageSize) break;
-      from += pageSize;
+      lastId = page.last['id'] as String;
     }
 
     final batches = <StockBatch>[];
@@ -520,22 +530,23 @@ class InventoryRepository {
   Future<List<CatalogItem>> fetchCatalog({bool includeInactive = true}) async {
     const pageSize = 1000;
     final allRows = <dynamic>[];
-    int from = 0;
+    String? lastId;
 
     while (true) {
       dynamic q = _client.from('items').select(
             'id, name, category, unit, reorder_level, requires_prescription, is_active, business_type_id, business_types(name), quantity_step, item_units(unit_name, factor)',
           );
       if (!includeInactive) q = q.eq('is_active', true);
+      if (lastId != null) q = q.gt('id', lastId);
       final page = await q
-          .order('name')
-          .range(from, from + pageSize - 1) as List;
+          .order('id')
+          .limit(pageSize) as List;
+      if (page.isEmpty) break;
       allRows.addAll(page);
-      if (page.length < pageSize) break;
-      from += pageSize;
+      lastId = page.last['id'] as String;
     }
 
-    return allRows
+    final items = allRows
         .map(
           (r) {
             final bt = r['business_types'];
@@ -559,6 +570,11 @@ class InventoryRepository {
           },
         )
         .toList();
+    items.sort((a, b) {
+      final byName = a.name.compareTo(b.name);
+      return byName != 0 ? byName : a.id.compareTo(b.id);
+    });
+    return items;
   }
 
   /// Exact (case-insensitive) name matches already in the catalog, for the

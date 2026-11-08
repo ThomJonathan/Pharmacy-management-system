@@ -81,14 +81,23 @@ class TodaySale {
 }
 
 class SaleRepository {
-  final SupabaseClient _client = Supabase.instance.client;
+  SaleRepository({SupabaseClient? client}) : _client = client ?? Supabase.instance.client;
+
+  final SupabaseClient _client;
 
   Future<List<String>> fetchCategories() async {
-    final rows = await _client.from('items').select('category').eq('is_active', true).limit(2000) as List;
     final cats = <String>{};
-    for (final r in rows) {
-      final c = (r['category'] as String?)?.trim();
-      if (c != null && c.isNotEmpty) cats.add(c);
+    String? lastId;
+    while (true) {
+      dynamic q = _client.from('items').select('id, category').eq('is_active', true);
+      if (lastId != null) q = q.gt('id', lastId);
+      final rows = await q.order('id').limit(100) as List;
+      if (rows.isEmpty) break;
+      for (final r in rows) {
+        final c = (r['category'] as String?)?.trim();
+        if (c != null && c.isNotEmpty) cats.add(c);
+      }
+      lastId = rows.last['id'] as String;
     }
     return cats.toList()..sort();
   }
