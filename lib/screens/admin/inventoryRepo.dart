@@ -281,16 +281,27 @@ class InventoryRepository {
   /// Search / category are applied client-side so the same fetch feeds
   /// the overview, low-stock, expiry and summary cards consistently.
   Future<List<ItemStock>> fetchOverview({String? branchId}) async {
-    dynamic q = _client
-        .from('inventory')
-        .select(
-          'id, item_id, branch_id, batch_number, buying_price, retail_price, '
-          'wholesale_price, quantity_received, quantity_available, expiry_date, '
-          'received_date, items(id, name, category, unit, reorder_level, is_active), '
-          'branches(name)',
-        );
-    if (branchId != null) q = q.eq('branch_id', branchId);
-    final rows = await q.gt('quantity_available', 0).limit(2000) as List;
+    const pageSize = 1000;
+    final rows = <dynamic>[];
+    int from = 0;
+
+    while (true) {
+      dynamic q = _client
+          .from('inventory')
+          .select(
+            'id, item_id, branch_id, batch_number, buying_price, retail_price, '
+            'wholesale_price, quantity_received, quantity_available, expiry_date, '
+            'received_date, items(id, name, category, unit, reorder_level, is_active), '
+            'branches(name)',
+          );
+      if (branchId != null) q = q.eq('branch_id', branchId);
+      final page = await q
+          .gt('quantity_available', 0)
+          .range(from, from + pageSize - 1) as List;
+      rows.addAll(page);
+      if (page.length < pageSize) break;
+      from += pageSize;
+    }
 
     final batches = <StockBatch>[];
     for (final r in rows) {
@@ -507,14 +518,24 @@ class InventoryRepository {
   }
 
   Future<List<CatalogItem>> fetchCatalog({bool includeInactive = true}) async {
-    dynamic q = _client
-        .from('items')
-        .select(
-          'id, name, category, unit, reorder_level, requires_prescription, is_active, business_type_id, business_types(name), quantity_step, item_units(unit_name, factor)',
-        );
-    if (!includeInactive) q = q.eq('is_active', true);
-    final rows = await q.order('name').limit(2000) as List;
-    return rows
+    const pageSize = 1000;
+    final allRows = <dynamic>[];
+    int from = 0;
+
+    while (true) {
+      dynamic q = _client.from('items').select(
+            'id, name, category, unit, reorder_level, requires_prescription, is_active, business_type_id, business_types(name), quantity_step, item_units(unit_name, factor)',
+          );
+      if (!includeInactive) q = q.eq('is_active', true);
+      final page = await q
+          .order('name')
+          .range(from, from + pageSize - 1) as List;
+      allRows.addAll(page);
+      if (page.length < pageSize) break;
+      from += pageSize;
+    }
+
+    return allRows
         .map(
           (r) {
             final bt = r['business_types'];

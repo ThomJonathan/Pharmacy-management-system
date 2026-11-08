@@ -1163,22 +1163,14 @@ class _ReceiveSheetState extends State<_ReceiveSheet> {
         children: [
           Row(
             children: [
-              Expanded(
-                child: Text(l.item?.name ?? 'Item ${i + 1}',
-                    style: empSans(14, weight: FontWeight.w700, color: empInk)),
-              ),
-              TextButton(
-                onPressed: () => _pickItem(l),
-                style: TextButton.styleFrom(
-                  foregroundColor: empPrimary,
-                  minimumSize: const Size(0, 32),
-                ),
-                child: Text(l.item == null ? 'Pick item' : 'Change',
-                    style: empSans(12.5, weight: FontWeight.w600, color: empPrimary)),
-              ),
+              Text('Item ${i + 1}',
+                  style: empSans(12.5, weight: FontWeight.w600, color: empMuted)),
+              const Spacer(),
               if (_lines.length > 1)
                 IconButton(
                   icon: const Icon(Icons.close, size: 17, color: empMuted),
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
                   onPressed: () => setState(() {
                     l.dispose();
                     _lines.removeAt(i);
@@ -1186,6 +1178,76 @@ class _ReceiveSheetState extends State<_ReceiveSheet> {
                 ),
             ],
           ),
+          const SizedBox(height: 6),
+          if (l.item == null)
+            InkWell(
+              onTap: () => _pickItem(l),
+              borderRadius: BorderRadius.circular(4),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                decoration: BoxDecoration(
+                  border: Border.all(color: empBorder),
+                  borderRadius: BorderRadius.circular(4),
+                  color: empBg,
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.search, size: 18, color: empMuted),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Search item from catalog…',
+                        style: empSans(13.5, color: empMuted),
+                      ),
+                    ),
+                    const Icon(Icons.arrow_drop_down, color: empMuted),
+                  ],
+                ),
+              ),
+            )
+          else
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                border: Border.all(color: empBorder),
+                borderRadius: BorderRadius.circular(4),
+                color: empBg,
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.check_circle_outline, size: 18, color: empPrimary),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          l.item!.name,
+                          style: empSans(13.5, weight: FontWeight.w700, color: empInk),
+                        ),
+                        if (l.item!.category.isNotEmpty || l.item!.unit.isNotEmpty) ...[
+                          const SizedBox(height: 2),
+                          Text(
+                            '${l.item!.category.isNotEmpty ? l.item!.category : 'Uncategorised'}${l.item!.unit.isNotEmpty ? ' · Unit: ${l.item!.unit}' : ''}',
+                            style: empSans(11.5, color: empMuted),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                  TextButton.icon(
+                    onPressed: () => _pickItem(l),
+                    icon: const Icon(Icons.search, size: 15),
+                    label: const Text('Change'),
+                    style: TextButton.styleFrom(
+                      foregroundColor: empPrimary,
+                      minimumSize: const Size(0, 32),
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                    ),
+                  ),
+                ],
+              ),
+            ),
           const SizedBox(height: 8),
           Row(
             children: [
@@ -1277,21 +1339,23 @@ class _ItemPickerSheetState extends State<_ItemPickerSheet> {
   bool _loading = false;
 
   @override
+  void initState() {
+    super.initState();
+    _search('');
+  }
+
+  @override
   void dispose() {
     _searchCtrl.dispose();
     super.dispose();
   }
 
   Future<void> _search(String q) async {
-    if (q.trim().length < 2) {
-      setState(() => _results = []);
-      return;
-    }
     setState(() => _loading = true);
     try {
       final res = await widget.repo.searchCatalog(q);
       if (!mounted) return;
-      if (_searchCtrl.text != q) return;
+      if (_searchCtrl.text != q && q.isNotEmpty) return;
       setState(() {
         _results = res;
         _loading = false;
@@ -1305,13 +1369,13 @@ class _ItemPickerSheetState extends State<_ItemPickerSheet> {
   Widget build(BuildContext context) {
     return EmpSheetFrame(
       title: 'Pick catalog item',
-      subtitle: 'Type item name to search catalog.',
+      subtitle: 'Search products by name or select from the catalog below.',
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           EmpSearchField(
             controller: _searchCtrl,
-            hint: 'Type a product name…',
+            hint: 'Search item name…',
             onChanged: _search,
           ),
           const SizedBox(height: 10),
@@ -1327,35 +1391,56 @@ class _ItemPickerSheetState extends State<_ItemPickerSheet> {
               ),
             )
           else if (_results.isNotEmpty)
-            ListView.separated(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              itemCount: _results.length,
-              separatorBuilder: (_, _) =>
-                  const Divider(height: 1, color: empBorder),
-              itemBuilder: (_, i) {
-                final c = _results[i];
-                return InkWell(
-                  onTap: () => Navigator.of(context).pop(c),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: Text(c.name, style: empSans(13.5, weight: FontWeight.w600, color: empInk)),
-                        ),
-                        const Icon(Icons.chevron_right, size: 17, color: empMuted),
-                      ],
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxHeight: 380),
+              child: ListView.separated(
+                shrinkWrap: true,
+                itemCount: _results.length,
+                separatorBuilder: (_, _) =>
+                    const Divider(height: 1, color: empBorder),
+                itemBuilder: (_, i) {
+                  final c = _results[i];
+                  return InkWell(
+                    onTap: () => Navigator.of(context).pop(c),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(c.name, style: empSans(13.5, weight: FontWeight.w600, color: empInk)),
+                                if (c.category.isNotEmpty || c.unit.isNotEmpty) ...[
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    '${c.category.isNotEmpty ? c.category : 'Uncategorised'}${c.unit.isNotEmpty ? ' · Unit: ${c.unit}' : ''}',
+                                    style: empSans(11.5, color: empMuted),
+                                  ),
+                                ],
+                              ],
+                            ),
+                          ),
+                          const Icon(Icons.chevron_right, size: 17, color: empMuted),
+                        ],
+                      ),
                     ),
-                  ),
-                );
-              },
+                  );
+                },
+              ),
             )
-          else if (_searchCtrl.text.trim().length >= 2)
+          else
             Padding(
-              padding: const EdgeInsets.symmetric(vertical: 16),
-              child: Text('No items match “${_searchCtrl.text.trim()}”.',
-                  textAlign: TextAlign.center, style: empSans(12.5, color: empMuted)),
+              padding: const EdgeInsets.symmetric(vertical: 20),
+              child: Center(
+                child: Text(
+                  _searchCtrl.text.trim().isEmpty
+                      ? 'No items found in catalog.'
+                      : 'No items match “${_searchCtrl.text.trim()}”.',
+                  textAlign: TextAlign.center,
+                  style: empSans(12.5, color: empMuted),
+                ),
+              ),
             ),
         ],
       ),

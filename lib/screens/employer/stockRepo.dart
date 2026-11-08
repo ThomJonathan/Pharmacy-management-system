@@ -143,24 +143,43 @@ class CashierStockRepository {
   }
 
   Future<List<BranchStockRow>> fetchStock({required String branchId, String query = ''}) async {
-    dynamic q = _client.from('items').select('id, name, category, unit, reorder_level').eq('is_active', true);
-    if (query.trim().isNotEmpty) q = q.ilike('name', '%${query.trim()}%');
-    final items = await q.order('name').limit(200) as List;
-    if (items.isEmpty) return [];
-    final ids = items.map((r) => r['id'] as String).toList();
+    const pageSize = 1000;
+    final allItems = <dynamic>[];
+    int from = 0;
+    final clean = query.trim();
+
+    while (true) {
+      dynamic q = _client.from('items').select('id, name, category, unit, reorder_level').eq('is_active', true);
+      if (clean.isNotEmpty) q = q.ilike('name', '%$clean%');
+      final page = await q
+          .order('name')
+          .range(from, from + pageSize - 1) as List;
+      allItems.addAll(page);
+      if (page.length < pageSize) break;
+      from += pageSize;
+    }
+
+    if (allItems.isEmpty) return [];
+    final ids = allItems.map((r) => r['id'] as String).toList();
     final today = _todayStr();
-    final stock = await _client
-        .from('inventory')
-        .select('item_id, quantity_available, retail_price, expiry_date')
-        .eq('branch_id', branchId)
-        .inFilter('item_id', ids)
-        .gt('quantity_available', 0)
-        .limit(2000) as List;
+
+    final allStock = <dynamic>[];
+    for (int i = 0; i < ids.length; i += 300) {
+      final chunk = ids.sublist(i, (i + 300 > ids.length) ? ids.length : i + 300);
+      final stockPage = await _client
+          .from('inventory')
+          .select('item_id, quantity_available, retail_price, expiry_date')
+          .eq('branch_id', branchId)
+          .inFilter('item_id', chunk)
+          .gt('quantity_available', 0)
+          .limit(2000) as List;
+      allStock.addAll(stockPage);
+    }
 
     final qtyBy = <String, double>{};
     final priceBy = <String, double>{};
     final expiring = <String>{};
-    for (final r in stock) {
+    for (final r in allStock) {
       final id = r['item_id'] as String;
       final qty = ((r['quantity_available'] as num?) ?? 0).toDouble();
       qtyBy[id] = (qtyBy[id] ?? 0) + qty;
@@ -178,7 +197,7 @@ class CashierStockRepository {
       }
     }
     final out = <BranchStockRow>[];
-    for (final it in items) {
+    for (final it in allItems) {
       final id = it['id'] as String;
       final qty = qtyBy[id] ?? 0;
       final reorder = ((it['reorder_level'] as num?) ?? 10).toDouble();
@@ -214,16 +233,28 @@ class CashierStockRepository {
   }
 
   Future<List<CatalogItemEntry>> fetchCatalogList({String query = ''}) async {
-    dynamic q = _client
-        .from('items')
-        .select('id, name, category, unit, reorder_level, is_active, business_types(name)')
-        .eq('is_active', true);
+    const pageSize = 1000;
+    final allRows = <dynamic>[];
+    int from = 0;
     final clean = query.trim();
-    if (clean.isNotEmpty) {
-      q = q.ilike('name', '%$clean%');
+
+    while (true) {
+      dynamic q = _client
+          .from('items')
+          .select('id, name, category, unit, reorder_level, is_active, business_types(name)')
+          .eq('is_active', true);
+      if (clean.isNotEmpty) {
+        q = q.ilike('name', '%$clean%');
+      }
+      final page = await q
+          .order('name')
+          .range(from, from + pageSize - 1) as List;
+      allRows.addAll(page);
+      if (page.length < pageSize) break;
+      from += pageSize;
     }
-    final rows = await q.order('name').limit(1000) as List;
-    return rows.map((r) {
+
+    return allRows.map((r) {
       final bt = r['business_types'];
       final btName = bt is Map ? (bt['name'] as String? ?? 'General') : 'General';
       return CatalogItemEntry(

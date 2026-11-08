@@ -2493,7 +2493,7 @@ class _PurchaseOrderCard extends StatelessWidget {
 
 class _PaymentPill extends StatelessWidget {
   final String status;
-  const _PaymentPill({super.key, required this.status});
+  const _PaymentPill({required this.status});
   @override
   Widget build(BuildContext context) {
     switch (status) {
