@@ -375,19 +375,20 @@ class _EmployeeReportsScreenState extends State<EmployeeReportsScreen> {
         border: Border.all(color: empBorder),
         borderRadius: BorderRadius.circular(4),
       ),
-      child: Column(
-        children: List.generate(d.sales.length, (i) {
+      child: ListView.separated(
+        shrinkWrap: true,
+        physics: const NeverScrollableScrollPhysics(),
+        itemCount: d.sales.length,
+        separatorBuilder: (_, _) =>
+            const Divider(height: 1, color: empBorder),
+        itemBuilder: (_, i) {
           final s = d.sales[i];
-          final isLast = i == d.sales.length - 1;
           return Material(
             color: Colors.transparent,
             child: InkWell(
               onTap: () => _receipt(s),
-              child: Container(
+              child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                decoration: BoxDecoration(
-                  border: isLast ? null : const Border(bottom: BorderSide(color: empBorder)),
-                ),
                 child: Row(
                   children: [
                     SizedBox(
@@ -426,7 +427,7 @@ class _EmployeeReportsScreenState extends State<EmployeeReportsScreen> {
               ),
             ),
           );
-        }),
+        },
       ),
     );
   }
@@ -474,16 +475,17 @@ class _EmployeeReportsScreenState extends State<EmployeeReportsScreen> {
             border: Border.all(color: empBorder),
             borderRadius: BorderRadius.circular(4),
           ),
-          child: Column(
-            children: List.generate(rows.length, (i) {
+          child: ListView.separated(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            itemCount: rows.length,
+            separatorBuilder: (_, _) =>
+                const Divider(height: 1, color: empBorder),
+            itemBuilder: (_, i) {
               final x = rows[i];
-              final isLast = i == rows.length - 1;
               final qtyStr = x.quantity % 1 == 0 ? x.quantity.toInt().toString() : x.quantity.toString();
-              return Container(
+              return Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                decoration: BoxDecoration(
-                  border: isLast ? null : const Border(bottom: BorderSide(color: empBorder)),
-                ),
                 child: Row(
                   children: [
                     SizedBox(
@@ -517,7 +519,7 @@ class _EmployeeReportsScreenState extends State<EmployeeReportsScreen> {
                   ],
                 ),
               );
-            }),
+            },
           ),
         ),
       ],
@@ -533,13 +535,10 @@ class _EmployeeReportsScreenState extends State<EmployeeReportsScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        TextField(
+        EmpSearchField(
           controller: _search,
+          hint: 'Search debtors by name…',
           onChanged: (_) => setState(() {}),
-          style: empSans(14, color: empInk),
-          decoration: empField('Search debtors by name…').copyWith(
-            prefixIcon: const Icon(Icons.search, size: 18, color: empMuted),
-          ),
         ),
         const SizedBox(height: 12),
         if (rows.isEmpty)
@@ -555,19 +554,20 @@ class _EmployeeReportsScreenState extends State<EmployeeReportsScreen> {
               border: Border.all(color: empBorder),
               borderRadius: BorderRadius.circular(4),
             ),
-            child: Column(
-              children: List.generate(rows.length, (i) {
+            child: ListView.separated(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              itemCount: rows.length,
+              separatorBuilder: (_, _) =>
+                  const Divider(height: 1, color: empBorder),
+              itemBuilder: (_, i) {
                 final x = rows[i];
-                final isLast = i == rows.length - 1;
                 return Material(
                   color: Colors.transparent,
                   child: InkWell(
                     onTap: () => _customer(x),
-                    child: Container(
+                    child: Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                      decoration: BoxDecoration(
-                        border: isLast ? null : const Border(bottom: BorderSide(color: empBorder)),
-                      ),
                       child: Row(
                         children: [
                           Expanded(
@@ -605,7 +605,7 @@ class _EmployeeReportsScreenState extends State<EmployeeReportsScreen> {
                     ),
                   ),
                 );
-              }),
+              },
             ),
           ),
       ],

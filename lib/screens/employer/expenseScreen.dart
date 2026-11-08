@@ -307,19 +307,18 @@ class _ExpenseScreenState extends State<ExpenseScreen> {
               border: Border.all(color: empBorder),
               borderRadius: BorderRadius.circular(4),
             ),
-            child: Column(
-              children: List.generate(_rows.length, (i) {
+            child: ListView.separated(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              itemCount: _rows.length,
+              separatorBuilder: (_, _) =>
+                  const Divider(height: 1, color: empBorder),
+              itemBuilder: (_, i) {
                 final e = _rows[i];
-                final isLast = i == _rows.length - 1;
-                return Container(
+                return Padding(
                   padding: const EdgeInsets.symmetric(
                     horizontal: 16,
                     vertical: 12,
-                  ),
-                  decoration: BoxDecoration(
-                    border: isLast
-                        ? null
-                        : const Border(bottom: BorderSide(color: empBorder)),
                   ),
                   child: Row(
                     children: [
@@ -369,7 +368,7 @@ class _ExpenseScreenState extends State<ExpenseScreen> {
                     ],
                   ),
                 );
-              }),
+              },
             ),
           ),
       ],

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
@@ -478,3 +480,89 @@ ButtonStyle empOutlineButton({double height = 40}) => OutlinedButton.styleFrom(
       side: const BorderSide(color: empBorder),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
     );
+
+// ============================================================================
+// DEBOUNCED SEARCH FIELD — Use for all employee search/filter inputs.
+// - Waits 250 ms after the user stops typing before firing onChanged.
+// - Fires immediately on clear so the list resets without delay.
+// - Cancels the timer on dispose to prevent setState-after-dispose crashes.
+// ============================================================================
+
+class EmpSearchField extends StatefulWidget {
+  final String hint;
+  final ValueChanged<String> onChanged;
+  final TextEditingController? controller;
+  final Duration debounceDuration;
+
+  const EmpSearchField({
+    super.key,
+    required this.hint,
+    required this.onChanged,
+    this.controller,
+    this.debounceDuration = const Duration(milliseconds: 250),
+  });
+
+  @override
+  State<EmpSearchField> createState() => _EmpSearchFieldState();
+}
+
+class _EmpSearchFieldState extends State<EmpSearchField> {
+  Timer? _debounceTimer;
+
+  @override
+  void dispose() {
+    _debounceTimer?.cancel();
+    super.dispose();
+  }
+
+  void _onTextChanged(String text) {
+    if (widget.debounceDuration == Duration.zero) {
+      widget.onChanged(text);
+      return;
+    }
+    _debounceTimer?.cancel();
+    // Immediate clear so list resets without waiting for debounce.
+    if (text.isEmpty) {
+      widget.onChanged(text);
+      return;
+    }
+    _debounceTimer = Timer(widget.debounceDuration, () {
+      if (mounted) widget.onChanged(text);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return TextField(
+      controller: widget.controller,
+      onChanged: _onTextChanged,
+      onSubmitted: (val) {
+        _debounceTimer?.cancel();
+        widget.onChanged(val);
+      },
+      style: empSans(14, color: empInk),
+      cursorColor: empPrimary,
+      decoration: InputDecoration(
+        hintText: widget.hint,
+        hintStyle: empSans(13.5, color: empMuted),
+        prefixIcon: const Icon(Icons.search, size: 18, color: empMuted),
+        filled: true,
+        fillColor: Colors.white,
+        contentPadding:
+            const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(4),
+          borderSide: const BorderSide(color: empBorder),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(4),
+          borderSide: const BorderSide(color: empBorder),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(4),
+          borderSide: const BorderSide(color: empPrimary),
+        ),
+      ),
+    );
+  }
+}

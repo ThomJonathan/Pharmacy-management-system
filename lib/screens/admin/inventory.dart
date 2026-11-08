@@ -175,11 +175,16 @@ _MovementMeta _movementMeta(String type) {
 class _InventoryScreenState extends State<InventoryScreen> {
   final _repo = InventoryRepository();
   final _searchCtrl = TextEditingController();
+  final _catalogSearchCtrl = TextEditingController();
+  final _scrollController = ScrollController();
 
   List<InvBranch> _branches = [];
   List<String> _categories = [];
   String? _branchId; // null = all branches
   String _search = '';
+  String _catalogSearch = '';
+  bool _showCatalogSearch = false;
+  bool _showBackToTop = false;
   String? _category; // null = all categories
   bool _showInactive = false;
   String? _movementType; // null = all types
@@ -210,12 +215,33 @@ class _InventoryScreenState extends State<InventoryScreen> {
   @override
   void initState() {
     super.initState();
+    _scrollController.addListener(_onScroll);
     _load();
+  }
+
+  void _onScroll() {
+    final show = _scrollController.hasClients && _scrollController.offset > 240;
+    if (show != _showBackToTop) {
+      setState(() => _showBackToTop = show);
+    }
+  }
+
+  void _scrollToTop() {
+    if (_scrollController.hasClients) {
+      _scrollController.animateTo(
+        0,
+        duration: const Duration(milliseconds: 350),
+        curve: Curves.easeOutCubic,
+      );
+    }
   }
 
   @override
   void dispose() {
+    _scrollController.removeListener(_onScroll);
+    _scrollController.dispose();
     _searchCtrl.dispose();
+    _catalogSearchCtrl.dispose();
     super.dispose();
   }
 
@@ -350,7 +376,9 @@ class _InventoryScreenState extends State<InventoryScreen> {
 
   List<CatalogItem> get _visibleCatalog {
     return _cachedVisibleCatalog ??= () {
-      final q = _search.trim().toLowerCase();
+      final catQuery = _catalogSearch.trim().toLowerCase();
+      final genQuery = _search.trim().toLowerCase();
+      final q = catQuery.isNotEmpty ? catQuery : genQuery;
       return _catalog.where((c) {
         if (!_showInactive && !c.isActive) return false;
         if (_category != null && c.category != _category) return false;
@@ -358,7 +386,10 @@ class _InventoryScreenState extends State<InventoryScreen> {
           if (!_branchBusinessTypeIds.contains(c.businessTypeId)) return false;
         }
         if (q.isEmpty) return true;
-        return c.name.toLowerCase().contains(q);
+        return c.name.toLowerCase().contains(q) ||
+            c.category.toLowerCase().contains(q) ||
+            c.unit.toLowerCase().contains(q) ||
+            c.businessTypeName.toLowerCase().contains(q);
       }).toList();
     }();
   }
@@ -658,8 +689,11 @@ class _InventoryScreenState extends State<InventoryScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final wideScreen =
+        MediaQuery.of(context).size.width >= kWideContentBreakpoint;
     return Scaffold(
       backgroundColor: kBg,
+      floatingActionButton: _buildBackToTopButton(wideScreen),
       body: SafeArea(
         child: RefreshIndicator(
           color: kPrimary,
@@ -674,6 +708,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
                 child: ConstrainedBox(
                   constraints: const BoxConstraints(maxWidth: 1080),
                   child: CustomScrollView(
+                    controller: _scrollController,
                     physics: const AlwaysScrollableScrollPhysics(),
                     slivers: [
                       SliverPadding(
@@ -744,6 +779,52 @@ class _InventoryScreenState extends State<InventoryScreen> {
               );
             },
           ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildBackToTopButton(bool wide) {
+    return AnimatedOpacity(
+      opacity: _showBackToTop ? 1.0 : 0.0,
+      duration: const Duration(milliseconds: 200),
+      child: AnimatedScale(
+        scale: _showBackToTop ? 1.0 : 0.8,
+        duration: const Duration(milliseconds: 200),
+        child: IgnorePointer(
+          ignoring: !_showBackToTop,
+          child: wide
+              ? FloatingActionButton.extended(
+                  heroTag: 'admin_inventory_back_to_top',
+                  onPressed: _scrollToTop,
+                  backgroundColor: Colors.white,
+                  foregroundColor: kPrimary,
+                  elevation: 3,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(20),
+                    side: const BorderSide(color: kBorder),
+                  ),
+                  icon:
+                      const Icon(Icons.arrow_upward, size: 16, color: kPrimary),
+                  label: Text(
+                    'Back to top',
+                    style: sans(12.5, weight: FontWeight.w600, color: kInk),
+                  ),
+                )
+              : FloatingActionButton.small(
+                  heroTag: 'admin_inventory_back_to_top',
+                  onPressed: _scrollToTop,
+                  backgroundColor: Colors.white,
+                  foregroundColor: kPrimary,
+                  elevation: 3,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(20),
+                    side: const BorderSide(color: kBorder),
+                  ),
+                  tooltip: 'Back to top',
+                  child:
+                      const Icon(Icons.arrow_upward, size: 18, color: kPrimary),
+                ),
         ),
       ),
     );
@@ -1281,6 +1362,31 @@ class _InventoryScreenState extends State<InventoryScreen> {
                       ),
                     ),
                   ),
+                  OutlinedButton.icon(
+                    onPressed: () {
+                      setState(() {
+                        _showCatalogSearch = !_showCatalogSearch;
+                        if (!_showCatalogSearch) {
+                          _catalogSearchCtrl.clear();
+                          _catalogSearch = '';
+                          _invalidateFilterCaches();
+                        }
+                      });
+                    },
+                    style: outlineButtonStyle(height: 40),
+                    icon: Icon(
+                      _showCatalogSearch ? Icons.close : Icons.search,
+                      size: 17,
+                    ),
+                    label: Text(
+                      wide
+                          ? (_showCatalogSearch
+                              ? 'Close search'
+                              : 'Search catalog')
+                          : (_showCatalogSearch ? 'Close' : 'Search'),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
                   FilterPill(
                     label: _showInactive
                         ? 'Hiding discontinued'
@@ -1302,6 +1408,41 @@ class _InventoryScreenState extends State<InventoryScreen> {
                   ),
                 ],
               ),
+              if (_showCatalogSearch || _catalogSearchCtrl.text.isNotEmpty) ...[
+                const SizedBox(height: 10),
+                Row(
+                  children: [
+                    Expanded(
+                      child: SearchField(
+                        hint:
+                            'Search catalog by product name, category or unit…',
+                        controller: _catalogSearchCtrl,
+                        onChanged: (v) {
+                          setState(() {
+                            _catalogSearch = v;
+                            _invalidateFilterCaches();
+                          });
+                        },
+                      ),
+                    ),
+                    if (_catalogSearch.isNotEmpty) ...[
+                      const SizedBox(width: 8),
+                      IconButton(
+                        tooltip: 'Clear search',
+                        icon:
+                            const Icon(Icons.clear, size: 18, color: kInkMuted),
+                        onPressed: () {
+                          _catalogSearchCtrl.clear();
+                          setState(() {
+                            _catalogSearch = '';
+                            _invalidateFilterCaches();
+                          });
+                        },
+                      ),
+                    ],
+                  ],
+                ),
+              ],
               const SizedBox(height: 10),
             ],
           ),
@@ -1862,6 +2003,7 @@ class _OverviewRow extends StatelessWidget {
               children: [
                 for (int i = 0; i < item.batches.length; i++)
                   _BatchRow(
+                    key: ValueKey(item.batches[i].id),
                     batch: item.batches[i],
                     unit: item.unit,
                     last: i == item.batches.length - 1,
@@ -1871,6 +2013,114 @@ class _OverviewRow extends StatelessWidget {
               ],
             ),
           ),
+        ],
+      ),
+    );
+  }
+}
+
+class _AdminItemPickerSheet extends StatefulWidget {
+  final List<CatalogItem> items;
+  const _AdminItemPickerSheet({required this.items});
+
+  @override
+  State<_AdminItemPickerSheet> createState() => _AdminItemPickerSheetState();
+}
+
+class _AdminItemPickerSheetState extends State<_AdminItemPickerSheet> {
+  final _searchCtrl = TextEditingController();
+  String _query = '';
+
+  @override
+  void dispose() {
+    _searchCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final clean = _query.trim().toLowerCase();
+    final filtered = widget.items.where((it) {
+      if (clean.isEmpty) return true;
+      return it.name.toLowerCase().contains(clean) ||
+          it.category.toLowerCase().contains(clean) ||
+          it.unit.toLowerCase().contains(clean) ||
+          it.businessTypeName.toLowerCase().contains(clean);
+    }).toList();
+
+    return SheetFrame(
+      title: 'Select item to add stock',
+      subtitle: 'Search products by name, category, or unit',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          SearchField(
+            hint: 'Search product name, category…',
+            controller: _searchCtrl,
+            onChanged: (v) => setState(() => _query = v),
+          ),
+          const SizedBox(height: 12),
+          if (filtered.isEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 32),
+              child: Center(
+                child: Text(
+                  'No items found matching “$_query”.',
+                  style: sans(13, color: kInkMuted),
+                ),
+              ),
+            )
+          else
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxHeight: 380),
+              child: ListView.separated(
+                shrinkWrap: true,
+                itemCount: filtered.length,
+                separatorBuilder: (_, _) =>
+                    const Divider(height: 1, color: kBorder),
+                itemBuilder: (context, i) {
+                  final it = filtered[i];
+                  return InkWell(
+                    onTap: () => Navigator.of(context).pop(it),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 10,
+                      ),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  it.name,
+                                  style: sans(
+                                    13.5,
+                                    weight: FontWeight.w600,
+                                    color: kInk,
+                                  ),
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  '${it.category} · Unit: ${it.unit} · ${it.businessTypeName}',
+                                  style: sans(12, color: kInkMuted),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const Icon(
+                            Icons.chevron_right,
+                            size: 18,
+                            color: kInkMuted,
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
         ],
       ),
     );
@@ -1900,6 +2150,7 @@ class _BatchRow extends StatelessWidget {
   final ValueChanged<StockBatch> onAdjust;
   final ValueChanged<StockBatch> onEditPrices;
   const _BatchRow({
+    super.key,
     required this.batch,
     required this.unit,
     required this.last,
@@ -2524,6 +2775,19 @@ class _AddStockSheetState extends State<_AddStockSheet> {
     if (picked != null) setState(() => _expiryDate = picked);
   }
 
+  Future<void> _pickItem() async {
+    final picked = await showAdaptiveSheet<CatalogItem>(
+      context,
+      builder: (_) => _AdminItemPickerSheet(items: widget.items),
+    );
+    if (picked != null && mounted) {
+      setState(() {
+        _itemId = picked.id;
+        _selectedUnit = picked.unit;
+      });
+    }
+  }
+
   Future<void> _submit() async {
     final quantity = double.tryParse(_quantityCtrl.text.trim());
     final buying = double.tryParse(_buyingCtrl.text.trim());
@@ -2621,30 +2885,81 @@ class _AddStockSheetState extends State<_AddStockSheet> {
                 : (value) => setState(() => _branchId = value),
           ),
           const SizedBox(height: 12),
-          DropdownButtonFormField<String>(
-            initialValue: _itemId,
-            decoration: fieldDecoration('Item'),
-            items: widget.items
-                .map(
-                  (item) => DropdownMenuItem(
-                    value: item.id,
-                    child: Text('${item.name} · ${item.unit}'),
+          if (_itemId == null)
+            InkWell(
+              onTap: _saving ? null : _pickItem,
+              borderRadius: BorderRadius.circular(4),
+              child: InputDecorator(
+                decoration: fieldDecoration('Item to add').copyWith(
+                  prefixIcon:
+                      const Icon(Icons.search, size: 20, color: kInkMuted),
+                  suffixIcon:
+                      const Icon(Icons.arrow_drop_down, color: kInkMuted),
+                ),
+                child: Text(
+                  'Search or select item from catalog…',
+                  style: sans(13.5, color: kInkMuted),
+                ),
+              ),
+            )
+          else
+            Builder(
+              builder: (context) {
+                final it = widget.items.cast<CatalogItem?>().firstWhere(
+                  (i) => i?.id == _itemId,
+                  orElse: () => null,
+                );
+                return Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    border: Border.all(color: kBorder),
+                    borderRadius: BorderRadius.circular(4),
                   ),
-                )
-                .toList(),
-            onChanged: _saving
-                ? null
-                : (value) {
-                    final it = widget.items.cast<CatalogItem?>().firstWhere(
-                      (i) => i?.id == value,
-                      orElse: () => null,
-                    );
-                    setState(() {
-                      _itemId = value;
-                      _selectedUnit = it?.unit;
-                    });
-                  },
-          ),
+                  child: Row(
+                    children: [
+                      const Icon(
+                        Icons.check_circle_outline,
+                        size: 20,
+                        color: kPrimary,
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              it?.name ?? 'Selected item',
+                              style: sans(
+                                14,
+                                weight: FontWeight.w600,
+                                color: kInk,
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              '${it?.category ?? ''} · Unit: ${it?.unit ?? ''}',
+                              style: sans(12, color: kInkMuted),
+                            ),
+                          ],
+                        ),
+                      ),
+                      TextButton.icon(
+                        onPressed: _saving ? null : _pickItem,
+                        icon: const Icon(Icons.search, size: 16),
+                        label: const Text('Change'),
+                        style: TextButton.styleFrom(
+                          foregroundColor: kPrimary,
+                          padding: const EdgeInsets.symmetric(horizontal: 8),
+                          minimumSize: const Size(0, 32),
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              },
+            ),
           if (_itemId != null) ...[
             Builder(
               builder: (context) {
@@ -2652,8 +2967,9 @@ class _AddStockSheetState extends State<_AddStockSheet> {
                   (i) => i?.id == _itemId,
                   orElse: () => null,
                 );
-                if (it == null || it.units.isEmpty)
+                if (it == null || it.units.isEmpty) {
                   return const SizedBox.shrink();
+                }
                 return Padding(
                   padding: const EdgeInsets.only(top: 12),
                   child: DropdownButtonFormField<String>(
@@ -3600,8 +3916,9 @@ class _ItemFormSheetState extends State<_ItemFormSheet> {
                         step: step,
                       );
                       if (ctx.mounted) Navigator.of(ctx).pop(true);
-                      if (mounted)
+                      if (mounted) {
                         Navigator.of(context).pop('Item converted to $nu.');
+                      }
                     } on InventoryException catch (e) {
                       setDlg(() => error = e.message);
                     } catch (e) {

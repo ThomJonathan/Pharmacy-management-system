@@ -44,7 +44,32 @@ class BranchStockRow {
 class CatalogOption {
   final String id;
   final String name;
-  const CatalogOption({required this.id, required this.name});
+  final String category;
+  final String unit;
+  const CatalogOption({
+    required this.id,
+    required this.name,
+    this.category = '',
+    this.unit = '',
+  });
+}
+
+class CatalogItemEntry {
+  final String id;
+  final String name;
+  final String category;
+  final String unit;
+  final String businessTypeName;
+  final double reorderLevel;
+
+  const CatalogItemEntry({
+    required this.id,
+    required this.name,
+    required this.category,
+    required this.unit,
+    required this.businessTypeName,
+    this.reorderLevel = 10,
+  });
 }
 
 class ExistingCatalogMatch {
@@ -172,10 +197,46 @@ class CashierStockRepository {
   }
 
   Future<List<CatalogOption>> searchCatalog(String query) async {
-    dynamic q = _client.from('items').select('id, name').eq('is_active', true);
+    dynamic q = _client
+        .from('items')
+        .select('id, name, category, unit')
+        .eq('is_active', true);
     if (query.trim().isNotEmpty) q = q.ilike('name', '%${query.trim()}%');
-    final rows = await q.order('name').limit(30) as List;
-    return rows.map((r) => CatalogOption(id: r['id'] as String, name: (r['name'] as String?) ?? '—')).toList();
+    final rows = await q.order('name').limit(100) as List;
+    return rows
+        .map((r) => CatalogOption(
+              id: r['id'] as String,
+              name: (r['name'] as String?) ?? '—',
+              category: (r['category'] as String?) ?? '',
+              unit: (r['unit'] as String?) ?? '',
+            ))
+        .toList();
+  }
+
+  Future<List<CatalogItemEntry>> fetchCatalogList({String query = ''}) async {
+    dynamic q = _client
+        .from('items')
+        .select('id, name, category, unit, reorder_level, is_active, business_types(name)')
+        .eq('is_active', true);
+    final clean = query.trim();
+    if (clean.isNotEmpty) {
+      q = q.ilike('name', '%$clean%');
+    }
+    final rows = await q.order('name').limit(1000) as List;
+    return rows.map((r) {
+      final bt = r['business_types'];
+      final btName = bt is Map ? (bt['name'] as String? ?? 'General') : 'General';
+      return CatalogItemEntry(
+        id: r['id'] as String,
+        name: (r['name'] as String?) ?? '—',
+        category: (r['category'] as String?)?.trim().isNotEmpty == true
+            ? (r['category'] as String).trim()
+            : 'Uncategorised',
+        unit: (r['unit'] as String?) ?? 'unit',
+        businessTypeName: btName,
+        reorderLevel: ((r['reorder_level'] as num?) ?? 10).toDouble(),
+      );
+    }).toList();
   }
 
   /// Exact (case-insensitive) name match already in the catalog, for the

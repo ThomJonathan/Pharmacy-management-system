@@ -283,6 +283,7 @@ class _EmployeeShellState extends State<EmployeeShell> {
           }
 
           return Scaffold(
+            resizeToAvoidBottomInset: false, // Prevents keyboard from resizing layout and causing frame drops.
             body: SafeArea(
               bottom: false,
               child: Column(

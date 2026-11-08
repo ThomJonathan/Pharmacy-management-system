@@ -244,71 +244,74 @@ class _CatalogAccessSectionState extends State<CatalogAccessSection> {
         message: 'When an employee requests permission to add new products to the catalog, it will appear here.',
       );
     }
-    return Column(
-      children: [
-        for (final r in list) ...[
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              border: Border.all(color: kBorder),
-              borderRadius: BorderRadius.circular(4),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(r.userName, style: sans(15, weight: FontWeight.w600, color: kInk)),
-                          const SizedBox(height: 2),
-                          Text('${r.branchName} · ${_fmtWhen(r.requestedAt)}',
-                              style: sans(12.5, color: kInkMuted)),
-                        ],
-                      ),
-                    ),
-                    Row(
-                      mainAxisSize: MainAxisSize.min,
+    return ListView.separated(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      itemCount: list.length,
+      separatorBuilder: (_, _) => const SizedBox(height: 10),
+      itemBuilder: (_, i) {
+        final r = list[i];
+        return Container(
+          key: ValueKey(r.id),
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            border: Border.all(color: kBorder),
+            borderRadius: BorderRadius.circular(4),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        OutlinedButton(
-                          onPressed: () => _deny(r),
-                          style: outlineButtonStyle(height: 36),
-                          child: const Text('Deny'),
-                        ),
-                        const SizedBox(width: 8),
-                        FilledButton(
-                          onPressed: () => _approve(r),
-                          style: primaryButtonStyle(height: 36),
-                          child: const Text('Approve'),
-                        ),
+                        Text(r.userName, style: sans(15, weight: FontWeight.w600, color: kInk)),
+                        const SizedBox(height: 2),
+                        Text('${r.branchName} · ${_fmtWhen(r.requestedAt)}',
+                            style: sans(12.5, color: kInkMuted)),
                       ],
                     ),
-                  ],
-                ),
-                if (r.reason.isNotEmpty) ...[
-                  const SizedBox(height: 10),
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFF8FAFC),
-                      borderRadius: BorderRadius.circular(4),
-                      border: Border.all(color: const Color(0xFFE2E8F0)),
-                    ),
-                    child: Text('“${r.reason}”',
-                        style: sans(13, color: kInkMuted).copyWith(fontStyle: FontStyle.italic)),
+                  ),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      OutlinedButton(
+                        onPressed: () => _deny(r),
+                        style: outlineButtonStyle(height: 36),
+                        child: const Text('Deny'),
+                      ),
+                      const SizedBox(width: 8),
+                      FilledButton(
+                        onPressed: () => _approve(r),
+                        style: primaryButtonStyle(height: 36),
+                        child: const Text('Approve'),
+                      ),
+                    ],
                   ),
                 ],
+              ),
+              if (r.reason.isNotEmpty) ...[
+                const SizedBox(height: 10),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF8FAFC),
+                    borderRadius: BorderRadius.circular(4),
+                    border: Border.all(color: const Color(0xFFE2E8F0)),
+                  ),
+                  child: Text('“${r.reason}”',
+                      style: sans(13, color: kInkMuted).copyWith(fontStyle: FontStyle.italic)),
+                ),
               ],
-            ),
+            ],
           ),
-          const SizedBox(height: 10),
-        ],
-      ],
+        );
+      },
     );
   }
 
@@ -321,48 +324,51 @@ class _CatalogAccessSectionState extends State<CatalogAccessSection> {
         message: 'No employees currently have permission to add products to the catalog.',
       );
     }
-    return Column(
-      children: [
-        for (final r in list) ...[
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              border: Border.all(color: kBorder),
-              borderRadius: BorderRadius.circular(4),
-            ),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Text(r.userName, style: sans(15, weight: FontWeight.w600, color: kInk)),
-                          const SizedBox(width: 8),
-                          StatusPill.active(r.countdownLabel()),
-                        ],
-                      ),
-                      const SizedBox(height: 3),
-                      Text(
-                        '${r.branchName} · Granted ${_fmtWhen(r.decidedAt ?? r.requestedAt)}',
-                        style: sans(12.5, color: kInkMuted),
-                      ),
-                    ],
-                  ),
-                ),
-                OutlinedButton(
-                  onPressed: () => _revoke(r),
-                  style: outlineButtonStyle(height: 36),
-                  child: const Text('End access'),
-                ),
-              ],
-            ),
+    return ListView.separated(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      itemCount: list.length,
+      separatorBuilder: (_, _) => const SizedBox(height: 10),
+      itemBuilder: (_, i) {
+        final r = list[i];
+        return Container(
+          key: ValueKey(r.id),
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            border: Border.all(color: kBorder),
+            borderRadius: BorderRadius.circular(4),
           ),
-          const SizedBox(height: 10),
-        ],
-      ],
+          child: Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Text(r.userName, style: sans(15, weight: FontWeight.w600, color: kInk)),
+                        const SizedBox(width: 8),
+                        StatusPill.active(r.countdownLabel()),
+                      ],
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      '${r.branchName} · Granted ${_fmtWhen(r.decidedAt ?? r.requestedAt)}',
+                      style: sans(12.5, color: kInkMuted),
+                    ),
+                  ],
+                ),
+              ),
+              OutlinedButton(
+                onPressed: () => _revoke(r),
+                style: outlineButtonStyle(height: 36),
+                child: const Text('End access'),
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 
@@ -375,38 +381,41 @@ class _CatalogAccessSectionState extends State<CatalogAccessSection> {
         message: 'Past requests and expired grants will appear here.',
       );
     }
-    return Column(
-      children: [
-        for (final r in list) ...[
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              border: Border.all(color: kBorder),
-              borderRadius: BorderRadius.circular(4),
-            ),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(r.userName, style: sans(14, weight: FontWeight.w600, color: kInk)),
-                      const SizedBox(height: 2),
-                      Text(
-                        '${r.branchName} · ${_fmtWhen(r.decidedAt ?? r.requestedAt)}',
-                        style: sans(12, color: kInkMuted),
-                      ),
-                    ],
-                  ),
-                ),
-                StatusPill.neutral(r.outcomeLabel()),
-              ],
-            ),
+    return ListView.separated(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      itemCount: list.length,
+      separatorBuilder: (_, _) => const SizedBox(height: 8),
+      itemBuilder: (_, i) {
+        final r = list[i];
+        return Container(
+          key: ValueKey(r.id),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            border: Border.all(color: kBorder),
+            borderRadius: BorderRadius.circular(4),
           ),
-          const SizedBox(height: 8),
-        ],
-      ],
+          child: Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(r.userName, style: sans(14, weight: FontWeight.w600, color: kInk)),
+                    const SizedBox(height: 2),
+                    Text(
+                      '${r.branchName} · ${_fmtWhen(r.decidedAt ?? r.requestedAt)}',
+                      style: sans(12, color: kInkMuted),
+                    ),
+                  ],
+                ),
+              ),
+              StatusPill.neutral(r.outcomeLabel()),
+            ],
+          ),
+        );
+      },
     );
   }
 }

@@ -257,10 +257,6 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
         final isDesktop = constraints.maxWidth >= _kDesktopBreakpoint;
         return Container(
           color: _kBg,
-          constraints: BoxConstraints(
-            minWidth: constraints.maxWidth,
-            minHeight: constraints.maxHeight,
-          ),
           child: SafeArea(
             child: RefreshIndicator(
               onRefresh: _refresh,
@@ -271,17 +267,15 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
                   horizontal: isDesktop ? 32 : 18,
                   vertical: isDesktop ? 28 : 18,
                 ),
-                child: ConstrainedBox(
-                  constraints: BoxConstraints(minHeight: constraints.maxHeight),
-                  child: Align(
-                    alignment: Alignment.topCenter,
-                    child: ConstrainedBox(
-                      constraints: BoxConstraints(
-                        maxWidth: isDesktop ? 1080 : double.infinity,
-                      ),
-                      child: FutureBuilder<AdminHomeData>(
-                        future: _dataFuture,
-                        builder: (context, snapshot) {
+                child: Align(
+                  alignment: Alignment.topCenter,
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(
+                      maxWidth: isDesktop ? 1080 : double.infinity,
+                    ),
+                    child: FutureBuilder<AdminHomeData>(
+                      future: _dataFuture,
+                      builder: (context, snapshot) {
                           final header = _Header(
                             branches: _branches,
                             selectedBranchId: _selectedBranchId,
@@ -332,10 +326,9 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
                 ),
               ),
             ),
-          ),
-        );
-      },
-    );
+          );
+        },
+      );
   }
 }
 
@@ -517,7 +510,7 @@ class _MobileLayout extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 24),
-        _SectionLabel('Sales by branch'),
+        const _SectionLabel('Sales by branch'),
         const SizedBox(height: 6),
         _BranchSalesList(branches: data.branchSales),
         const SizedBox(height: 24),
@@ -605,7 +598,7 @@ class _DesktopLayout extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  _SectionLabel('Sales by branch'),
+                  const _SectionLabel('Sales by branch'),
                   const SizedBox(height: 8),
                   _BranchSalesList(branches: data.branchSales),
                 ],

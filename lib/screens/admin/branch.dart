@@ -156,36 +156,44 @@ class _BranchesScreenState extends State<BranchesScreen> {
           child: LayoutBuilder(
             builder: (context, c) {
               final wide = c.maxWidth >= kWideContentBreakpoint;
-              return SingleChildScrollView(
-                physics: const AlwaysScrollableScrollPhysics(),
-                padding: EdgeInsets.fromLTRB(wide ? 32 : 18, wide ? 28 : 12, wide ? 32 : 18, 96),
-                child: Center(
-                  child: ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 1080),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        if (widget.embedded) ...[
-                          PageTitle(
-                            title: 'Branches',
-                            subtitle: _loading
-                                ? 'Loading…'
-                                : '${_branches.length} ${_branches.length == 1 ? 'shop' : 'shops'} · '
-                                '${_branches.where((b) => b.isActive).length} active',
-                            trailing: addButton,
-                          ),
-                          const SizedBox(height: 22),
-                        ] else if (!_loading && _error == null) ...[
-                          Text(
-                            '${_branches.length} ${_branches.length == 1 ? 'shop' : 'shops'} · '
-                                '${_branches.where((b) => b.isActive).length} active',
-                            style: sans(13.5, color: kInkMuted),
-                          ),
-                          const SizedBox(height: 14),
-                        ],
-                        _body(addButton),
-                      ],
-                    ),
+              final horizontalPadding = wide ? 32.0 : 18.0;
+              final topPadding = wide ? 28.0 : 12.0;
+
+              return Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 1080),
+                  child: CustomScrollView(
+                    physics: const AlwaysScrollableScrollPhysics(),
+                    slivers: [
+                      SliverPadding(
+                        padding: EdgeInsets.fromLTRB(
+                          horizontalPadding,
+                          topPadding,
+                          horizontalPadding,
+                          widget.embedded ? 22 : 14,
+                        ),
+                        sliver: SliverToBoxAdapter(
+                          child: widget.embedded
+                              ? PageTitle(
+                                  title: 'Branches',
+                                  subtitle: _loading
+                                      ? 'Loading…'
+                                      : '${_branches.length} ${_branches.length == 1 ? 'shop' : 'shops'} · '
+                                          '${_branches.where((b) => b.isActive).length} active',
+                                  trailing: addButton,
+                                )
+                              : (_loading || _error != null
+                                  ? const SizedBox.shrink()
+                                  : Text(
+                                      '${_branches.length} ${_branches.length == 1 ? 'shop' : 'shops'} · '
+                                          '${_branches.where((b) => b.isActive).length} active',
+                                      style: sans(13.5, color: kInkMuted),
+                                    )),
+                        ),
+                      ),
+                      ..._buildSlivers(addButton, horizontalPadding),
+                      const SliverToBoxAdapter(child: SizedBox(height: 96)),
+                    ],
                   ),
                 ),
               );
@@ -196,43 +204,67 @@ class _BranchesScreenState extends State<BranchesScreen> {
     );
   }
 
-  Widget _body(Widget addButton) {
+  List<Widget> _buildSlivers(Widget addButton, double horizontalPadding) {
     if (_loading) {
-      return const Padding(
-        padding: EdgeInsets.only(top: 80),
-        child: Center(child: CircularProgressIndicator(color: kPrimary)),
-      );
+      return const [
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: EdgeInsets.only(top: 80),
+            child: Center(child: CircularProgressIndicator(color: kPrimary)),
+          ),
+        ),
+      ];
     }
-    if (_error != null) return ErrorState(message: _error!, onRetry: _load);
+    if (_error != null) {
+      return [
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: EdgeInsets.symmetric(horizontal: horizontalPadding),
+            child: ErrorState(message: _error!, onRetry: _load),
+          ),
+        ),
+      ];
+    }
     if (_branches.isEmpty) {
-      return EmptyState(
-        icon: Icons.storefront_outlined,
-        title: 'No branches yet',
-        message: 'Add your first shop to start assigning staff and tracking stock.',
-        action: addButton,
-      );
+      return [
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: EdgeInsets.symmetric(horizontal: horizontalPadding),
+            child: EmptyState(
+              icon: Icons.storefront_outlined,
+              title: 'No branches yet',
+              message: 'Add your first shop to start assigning staff and tracking stock.',
+              action: addButton,
+            ),
+          ),
+        ),
+      ];
     }
-    return GridView.builder(
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      itemCount: _branches.length,
-      gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-        maxCrossAxisExtent: 380,
-        mainAxisExtent: 152,
-        crossAxisSpacing: 14,
-        mainAxisSpacing: 14,
+    return [
+      SliverPadding(
+        padding: EdgeInsets.symmetric(horizontal: horizontalPadding),
+        sliver: SliverGrid.builder(
+          itemCount: _branches.length,
+          gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+            maxCrossAxisExtent: 380,
+            mainAxisExtent: 152,
+            crossAxisSpacing: 14,
+            mainAxisSpacing: 14,
+          ),
+          itemBuilder: (_, i) {
+            final b = _branches[i];
+            return _BranchCard(
+              key: ValueKey(b.id),
+              branch: b,
+              onTap: () => _openStaff(b),
+              onEdit: () => _addOrEdit(b),
+              onToggle: () => _toggleActive(b),
+              onDelete: () => _delete(b),
+            );
+          },
+        ),
       ),
-      itemBuilder: (_, i) {
-        final b = _branches[i];
-        return _BranchCard(
-          branch: b,
-          onTap: () => _openStaff(b),
-          onEdit: () => _addOrEdit(b),
-          onToggle: () => _toggleActive(b),
-          onDelete: () => _delete(b),
-        );
-      },
-    );
+    ];
   }
 }
 
@@ -248,6 +280,7 @@ class _BranchCard extends StatelessWidget {
   final VoidCallback onDelete;
 
   const _BranchCard({
+    super.key,
     required this.branch,
     required this.onTap,
     required this.onEdit,

@@ -196,6 +196,7 @@ class _AdminShellState extends State<AdminShell> {
           }
 
           return Scaffold(
+            resizeToAvoidBottomInset: false,
             body: SafeArea(
               bottom: false,
               child: Column(

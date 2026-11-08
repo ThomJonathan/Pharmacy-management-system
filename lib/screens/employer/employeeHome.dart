@@ -786,23 +786,10 @@ class _LookupBlock extends StatelessWidget {
           subtitle: 'Search prices & availability without starting a sale',
         ),
         const SizedBox(height: 10),
-        TextField(
+        EmpSearchField(
           controller: controller,
+          hint: 'Type a medicine or item name…',
           onChanged: onChanged,
-          style: empSans(14, color: empInk),
-          textInputAction: TextInputAction.search,
-          decoration: empField('Type a medicine or item name…').copyWith(
-            prefixIcon: const Icon(Icons.search, size: 18, color: empMuted),
-            suffixIcon: q.isEmpty
-                ? null
-                : IconButton(
-                    icon: const Icon(Icons.clear, size: 17, color: empMuted),
-                    onPressed: () {
-                      controller.clear();
-                      onChanged('');
-                    },
-                  ),
-          ),
         ),
         if (loading) ...[
           const SizedBox(height: 12),
@@ -833,19 +820,17 @@ class _LookupBlock extends StatelessWidget {
                 border: Border.all(color: empBorder),
                 borderRadius: BorderRadius.circular(4),
               ),
-              child: Column(
-                children: List.generate(results.length, (i) {
+              child: ListView.separated(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                itemCount: results.length,
+                separatorBuilder: (_, _) => const Divider(height: 1, color: empBorder),
+                itemBuilder: (_, i) {
                   final r = results[i];
-                  final isLast = i == results.length - 1;
-                  return Container(
+                  return Padding(
                     padding: const EdgeInsets.symmetric(
                       horizontal: 14,
                       vertical: 10,
-                    ),
-                    decoration: BoxDecoration(
-                      border: isLast
-                          ? null
-                          : const Border(bottom: BorderSide(color: empBorder)),
                     ),
                     child: Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -883,7 +868,7 @@ class _LookupBlock extends StatelessWidget {
                       ],
                     ),
                   );
-                }),
+                },
               ),
             ),
         ],
@@ -923,25 +908,22 @@ class _RecentSalesBlock extends StatelessWidget {
               border: Border.all(color: empBorder),
               borderRadius: BorderRadius.circular(4),
             ),
-            child: Column(
-              children: List.generate(sales.length, (i) {
+            child: ListView.separated(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              itemCount: sales.length,
+              separatorBuilder: (_, _) =>
+                  const Divider(height: 1, color: empBorder),
+              itemBuilder: (_, i) {
                 final s = sales[i];
-                final isLast = i == sales.length - 1;
                 return Material(
                   color: Colors.transparent,
                   child: InkWell(
                     onTap: () => onTap(s),
-                    child: Container(
+                    child: Padding(
                       padding: const EdgeInsets.symmetric(
                         horizontal: 16,
                         vertical: 12,
-                      ),
-                      decoration: BoxDecoration(
-                        border: isLast
-                            ? null
-                            : const Border(
-                                bottom: BorderSide(color: empBorder),
-                              ),
                       ),
                       child: Row(
                         children: [
@@ -984,7 +966,7 @@ class _RecentSalesBlock extends StatelessWidget {
                     ),
                   ),
                 );
-              }),
+              },
             ),
           ),
       ],
@@ -1041,20 +1023,19 @@ class _MovementsBlock extends StatelessWidget {
               border: Border.all(color: empBorder),
               borderRadius: BorderRadius.circular(4),
             ),
-            child: Column(
-              children: List.generate(moves.length, (i) {
+            child: ListView.separated(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              itemCount: moves.length,
+              separatorBuilder: (_, _) =>
+                  const Divider(height: 1, color: empBorder),
+              itemBuilder: (_, i) {
                 final m = moves[i];
                 final out = _isOut(m.type);
-                final isLast = i == moves.length - 1;
-                return Container(
+                return Padding(
                   padding: const EdgeInsets.symmetric(
                     horizontal: 16,
                     vertical: 12,
-                  ),
-                  decoration: BoxDecoration(
-                    border: isLast
-                        ? null
-                        : const Border(bottom: BorderSide(color: empBorder)),
                   ),
                   child: Row(
                     children: [
@@ -1089,7 +1070,7 @@ class _MovementsBlock extends StatelessWidget {
                     ],
                   ),
                 );
-              }),
+              },
             ),
           ),
       ],

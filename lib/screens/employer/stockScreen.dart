@@ -23,12 +23,18 @@ class StockScreen extends StatefulWidget {
 class _StockScreenState extends State<StockScreen> {
   final _repo = CashierStockRepository();
   final _searchCtrl = TextEditingController();
+  final _catalogSearchCtrl = TextEditingController();
+  final _scrollController = ScrollController();
 
   bool _loading = true;
   String? _error;
   List<BranchStockRow> _rows = [];
+  List<CatalogItemEntry> _catalog = [];
   String _query = '';
-  String _chip = 'all'; // all | low | expiring
+  String _catalogQuery = '';
+  String _chip = 'all'; // all | low | expiring | catalog
+  bool _showBackToTop = false;
+  bool _showCatalogSearch = false;
 
   bool _canReceive = false;
   OwnAccess _access = const OwnAccess(state: OwnAccessState.none);
@@ -47,12 +53,33 @@ class _StockScreenState extends State<StockScreen> {
   @override
   void initState() {
     super.initState();
+    _scrollController.addListener(_onScroll);
     _load();
+  }
+
+  void _onScroll() {
+    final show = _scrollController.hasClients && _scrollController.offset > 240;
+    if (show != _showBackToTop) {
+      setState(() => _showBackToTop = show);
+    }
+  }
+
+  void _scrollToTop() {
+    if (_scrollController.hasClients) {
+      _scrollController.animateTo(
+        0,
+        duration: const Duration(milliseconds: 350),
+        curve: Curves.easeOutCubic,
+      );
+    }
   }
 
   @override
   void dispose() {
+    _scrollController.removeListener(_onScroll);
+    _scrollController.dispose();
     _searchCtrl.dispose();
+    _catalogSearchCtrl.dispose();
     super.dispose();
   }
 
@@ -91,6 +118,7 @@ class _StockScreenState extends State<StockScreen> {
         _repo.hasCatalogAccess(),
         _repo.myCatalogStatus(),
         _repo.fetchBranchBusinessTypes(bid),
+        _repo.fetchCatalogList(query: _catalogQuery),
       ]);
       if (!mounted) return;
       setState(() {
@@ -100,6 +128,7 @@ class _StockScreenState extends State<StockScreen> {
         _canAddCatalog = results[3] as bool;
         _catalogAccess = results[4] as OwnAccess;
         _branchTypes = results[5] as List<BusinessTypeOption>;
+        _catalog = results[6] as List<CatalogItemEntry>;
         _loading = false;
         _error = null;
         _loadedOnce = true;
@@ -111,6 +140,15 @@ class _StockScreenState extends State<StockScreen> {
         _error = e.toString();
       });
     }
+  }
+
+  Future<void> _onCatalogSearch(String q) async {
+    setState(() => _catalogQuery = q);
+    try {
+      final items = await _repo.fetchCatalogList(query: q);
+      if (!mounted) return;
+      setState(() => _catalog = items);
+    } catch (_) {}
   }
 
   List<BranchStockRow> get _visible {
@@ -255,8 +293,11 @@ class _StockScreenState extends State<StockScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final wideScreen =
+        MediaQuery.of(context).size.width >= empWideBreakpoint;
     return Scaffold(
       backgroundColor: empBg,
+      floatingActionButton: _buildBackToTopButton(wideScreen),
       body: SafeArea(
         child: RefreshIndicator(
           color: empPrimary,
@@ -265,6 +306,7 @@ class _StockScreenState extends State<StockScreen> {
             builder: (context, c) {
               final wide = c.maxWidth >= empWideBreakpoint;
               return SingleChildScrollView(
+                controller: _scrollController,
                 physics: const AlwaysScrollableScrollPhysics(),
                 padding: EdgeInsets.fromLTRB(
                   wide ? 32 : 18,
@@ -281,6 +323,53 @@ class _StockScreenState extends State<StockScreen> {
               );
             },
           ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildBackToTopButton(bool wide) {
+    return AnimatedOpacity(
+      opacity: _showBackToTop ? 1.0 : 0.0,
+      duration: const Duration(milliseconds: 200),
+      child: AnimatedScale(
+        scale: _showBackToTop ? 1.0 : 0.8,
+        duration: const Duration(milliseconds: 200),
+        child: IgnorePointer(
+          ignoring: !_showBackToTop,
+          child: wide
+              ? FloatingActionButton.extended(
+                  heroTag: 'emp_stock_back_to_top',
+                  onPressed: _scrollToTop,
+                  backgroundColor: Colors.white,
+                  foregroundColor: empPrimary,
+                  elevation: 3,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(20),
+                    side: const BorderSide(color: empBorder),
+                  ),
+                  icon: const Icon(Icons.arrow_upward,
+                      size: 16, color: empPrimary),
+                  label: Text(
+                    'Back to top',
+                    style:
+                        empSans(12.5, weight: FontWeight.w600, color: empInk),
+                  ),
+                )
+              : FloatingActionButton.small(
+                  heroTag: 'emp_stock_back_to_top',
+                  onPressed: _scrollToTop,
+                  backgroundColor: Colors.white,
+                  foregroundColor: empPrimary,
+                  elevation: 3,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(20),
+                    side: const BorderSide(color: empBorder),
+                  ),
+                  tooltip: 'Back to top',
+                  child: const Icon(Icons.arrow_upward,
+                      size: 18, color: empPrimary),
+                ),
         ),
       ),
     );
@@ -354,39 +443,42 @@ class _StockScreenState extends State<StockScreen> {
                 style: empSans(12, color: empMuted),
               ),
             ),
-            const SizedBox(width: 10),
-            if (_canAddCatalog)
+            const SizedBox(width: 8),
+            OutlinedButton.icon(
+              onPressed: () => setState(
+                  () => _chip = _chip == 'catalog' ? 'all' : 'catalog'),
+              style: empOutlineButton(height: 38),
+              icon: Icon(
+                _chip == 'catalog'
+                    ? Icons.inventory_2_outlined
+                    : Icons.menu_book_outlined,
+                size: 16,
+              ),
+              label: Text(_chip == 'catalog' ? 'View stock' : 'View catalog'),
+            ),
+            if (_canAddCatalog) ...[
+              const SizedBox(width: 8),
               OutlinedButton.icon(
                 onPressed: _addCatalogItem,
                 style: empOutlineButton(height: 38),
                 icon: const Icon(Icons.playlist_add_outlined, size: 16),
                 label: const Text('Add product'),
-              )
-            else if (_catalogAccess.state != OwnAccessState.pending)
+              ),
+            ] else if (_catalogAccess.state != OwnAccessState.pending) ...[
+              const SizedBox(width: 8),
               OutlinedButton.icon(
                 onPressed: _requestCatalogAccess,
                 style: empOutlineButton(height: 38),
                 icon: const Icon(Icons.library_add_outlined, size: 16),
                 label: const Text('Request catalog access'),
               ),
+            ],
           ],
         ),
         const SizedBox(height: 16),
         _accessBanner(),
         _catalogBanner(),
         const SizedBox(height: 16),
-        TextField(
-          controller: _searchCtrl,
-          onChanged: (v) {
-            setState(() => _query = v);
-            _load(silent: true);
-          },
-          style: empSans(14, color: empInk),
-          decoration: empField('Search stock by product or item name…').copyWith(
-            prefixIcon: const Icon(Icons.search, size: 18, color: empMuted),
-          ),
-        ),
-        const SizedBox(height: 12),
         SingleChildScrollView(
           scrollDirection: Axis.horizontal,
           child: Row(
@@ -408,11 +500,85 @@ class _StockScreenState extends State<StockScreen> {
                 selected: _chip == 'expiring',
                 onTap: () => setState(() => _chip = 'expiring'),
               ),
+              const SizedBox(width: 8),
+              EmpFilterPill(
+                label: 'Catalog (${_catalog.length})',
+                selected: _chip == 'catalog',
+                onTap: () => setState(() => _chip = 'catalog'),
+              ),
             ],
           ),
         ),
         const SizedBox(height: 16),
-        _list(wide),
+        if (_chip == 'catalog') ...[
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  'Catalog products (${_catalog.length})',
+                  style: empSans(13.5, weight: FontWeight.w700, color: empInk),
+                ),
+              ),
+              OutlinedButton.icon(
+                onPressed: () {
+                  setState(() {
+                    _showCatalogSearch = !_showCatalogSearch;
+                    if (!_showCatalogSearch) {
+                      _catalogSearchCtrl.clear();
+                      _onCatalogSearch('');
+                    }
+                  });
+                },
+                style: empOutlineButton(height: 36),
+                icon: Icon(
+                  _showCatalogSearch ? Icons.close : Icons.search,
+                  size: 16,
+                ),
+                label: Text(
+                  _showCatalogSearch ? 'Close search' : 'Search catalog',
+                ),
+              ),
+            ],
+          ),
+          if (_showCatalogSearch || _catalogSearchCtrl.text.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                Expanded(
+                  child: EmpSearchField(
+                    controller: _catalogSearchCtrl,
+                    hint: 'Search catalog by product name…',
+                    onChanged: _onCatalogSearch,
+                  ),
+                ),
+                if (_catalogQuery.isNotEmpty) ...[
+                  const SizedBox(width: 8),
+                  IconButton(
+                    tooltip: 'Clear search',
+                    icon: const Icon(Icons.clear, size: 18, color: empMuted),
+                    onPressed: () {
+                      _catalogSearchCtrl.clear();
+                      _onCatalogSearch('');
+                    },
+                  ),
+                ],
+              ],
+            ),
+          ],
+          const SizedBox(height: 14),
+          _catalogList(wide),
+        ] else ...[
+          EmpSearchField(
+            controller: _searchCtrl,
+            hint: 'Search stock by product or item name…',
+            onChanged: (v) {
+              setState(() => _query = v);
+              _load(silent: true);
+            },
+          ),
+          const SizedBox(height: 16),
+          _list(wide),
+        ],
       ],
     );
   }
@@ -557,15 +723,16 @@ class _StockScreenState extends State<StockScreen> {
         border: Border.all(color: empBorder),
         borderRadius: BorderRadius.circular(4),
       ),
-      child: Column(
-        children: List.generate(rows.length, (i) {
+      child: ListView.separated(
+        shrinkWrap: true,
+        physics: const NeverScrollableScrollPhysics(),
+        itemCount: rows.length,
+        separatorBuilder: (_, _) =>
+            const Divider(height: 1, color: empBorder),
+        itemBuilder: (_, i) {
           final r = rows[i];
-          final isLast = i == rows.length - 1;
-          return Container(
+          return Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-            decoration: BoxDecoration(
-              border: isLast ? null : const Border(bottom: BorderSide(color: empBorder)),
-            ),
             child: Row(
               children: [
                 Expanded(
@@ -618,7 +785,100 @@ class _StockScreenState extends State<StockScreen> {
               ],
             ),
           );
-        }),
+        },
+      ),
+    );
+  }
+
+  Widget _catalogList(bool wide) {
+    if (_catalog.isEmpty) {
+      return EmpEmpty(
+        icon: Icons.category_outlined,
+        title: 'No catalog items found',
+        message: _catalogQuery.trim().isEmpty
+            ? 'No items found in the shared catalog.'
+            : 'No catalog items match “${_catalogQuery.trim()}”.',
+      );
+    }
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        border: Border.all(color: empBorder),
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: ListView.separated(
+        shrinkWrap: true,
+        physics: const NeverScrollableScrollPhysics(),
+        itemCount: _catalog.length,
+        separatorBuilder: (_, _) =>
+            const Divider(height: 1, color: empBorder),
+        itemBuilder: (_, i) {
+          final c = _catalog[i];
+          return Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        c.name,
+                        style: empSans(13.5,
+                            weight: FontWeight.w600, color: empInk),
+                      ),
+                      const SizedBox(height: 3),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 4,
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: empSurface,
+                              border: Border.all(color: empBorder),
+                              borderRadius: BorderRadius.circular(3),
+                            ),
+                            child: Text(
+                              c.category,
+                              style: empSans(11, color: empMuted),
+                            ),
+                          ),
+                          Text(
+                            'Unit: ${c.unit}',
+                            style: empSans(11.5, color: empMuted),
+                          ),
+                          Text(
+                            '· ${c.businessTypeName}',
+                            style: empSans(11.5, color: empMuted),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Text(
+                      'Reorder: ${c.reorderLevel.toStringAsFixed(c.reorderLevel % 1 == 0 ? 0 : 1)}',
+                      style: empMono(12,
+                          weight: FontWeight.w600, color: empInk),
+                    ),
+                    const SizedBox(height: 1),
+                    Text(
+                      'min level',
+                      style: empSans(10.5, color: empMuted),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          );
+        },
       ),
     );
   }
@@ -1049,13 +1309,10 @@ class _ItemPickerSheetState extends State<_ItemPickerSheet> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          TextField(
+          EmpSearchField(
             controller: _searchCtrl,
+            hint: 'Type a product name…',
             onChanged: _search,
-            style: empSans(14, color: empInk),
-            decoration: empField('Type a product name…').copyWith(
-              prefixIcon: const Icon(Icons.search, size: 18, color: empMuted),
-            ),
           ),
           const SizedBox(height: 10),
           if (_loading)
@@ -1070,21 +1327,30 @@ class _ItemPickerSheetState extends State<_ItemPickerSheet> {
               ),
             )
           else if (_results.isNotEmpty)
-            for (final c in _results)
-              InkWell(
-                onTap: () => Navigator.of(context).pop(c),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: Text(c.name, style: empSans(13.5, weight: FontWeight.w600, color: empInk)),
-                      ),
-                      const Icon(Icons.chevron_right, size: 17, color: empMuted),
-                    ],
+            ListView.separated(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              itemCount: _results.length,
+              separatorBuilder: (_, _) =>
+                  const Divider(height: 1, color: empBorder),
+              itemBuilder: (_, i) {
+                final c = _results[i];
+                return InkWell(
+                  onTap: () => Navigator.of(context).pop(c),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Text(c.name, style: empSans(13.5, weight: FontWeight.w600, color: empInk)),
+                        ),
+                        const Icon(Icons.chevron_right, size: 17, color: empMuted),
+                      ],
+                    ),
                   ),
-                ),
-              )
+                );
+              },
+            )
           else if (_searchCtrl.text.trim().length >= 2)
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 16),

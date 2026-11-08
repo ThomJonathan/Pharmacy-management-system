@@ -223,103 +223,108 @@ class _UsersScreenState extends State<UsersScreen> {
           child: LayoutBuilder(
             builder: (context, c) {
               final wide = c.maxWidth >= kWideContentBreakpoint;
-              return SingleChildScrollView(
-                physics: const AlwaysScrollableScrollPhysics(),
-                padding: EdgeInsets.fromLTRB(wide ? 32 : 18, wide ? 28 : 12, wide ? 32 : 18, 32),
-                child: Center(
-                  child: ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 1080),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        if (widget.embedded) ...[
-                          PageTitle(
-                            title: 'Users',
-                            subtitle: _loading
-                                ? 'Loading…'
-                                : '${_users.length} accounts · $pending awaiting approval',
-                          ),
-                          const SizedBox(height: 16),
-                          ValueListenableBuilder<int>(
-                            valueListenable: stockAccessPendingCount,
-                            builder: (_, accessPending, _) => ValueListenableBuilder<int>(
-                              valueListenable: catalogAccessPendingCount,
-                              builder: (_, catalogPending, _) => SingleChildScrollView(
-                                scrollDirection: Axis.horizontal,
-                                child: Row(
-                                  children: [
-                                    FilterPill(
-                                      label: 'Staff',
-                                      selected: _section == 0,
-                                      onTap: () => setState(() => _section = 0),
-                                    ),
-                                    const SizedBox(width: 8),
-                                    FilterPill(
-                                      label: accessPending > 0
-                                          ? 'Stock access ($accessPending)'
-                                          : 'Stock access',
-                                      selected: _section == 1,
-                                      onTap: () => setState(() => _section = 1),
-                                    ),
-                                    const SizedBox(width: 8),
-                                    FilterPill(
-                                      label: catalogPending > 0
-                                          ? 'Catalog access ($catalogPending)'
-                                          : 'Catalog access',
-                                      selected: _section == 2,
-                                      onTap: () => setState(() => _section = 2),
-                                    ),
-                                  ],
+              final horizontalPadding = wide ? 32.0 : 18.0;
+              final topPadding = wide ? 28.0 : 12.0;
+
+              return Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 1080),
+                  child: CustomScrollView(
+                    physics: const AlwaysScrollableScrollPhysics(),
+                    slivers: [
+                      SliverPadding(
+                        padding: EdgeInsets.fromLTRB(
+                          horizontalPadding,
+                          topPadding,
+                          horizontalPadding,
+                          16,
+                        ),
+                        sliver: SliverToBoxAdapter(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              if (widget.embedded) ...[
+                                PageTitle(
+                                  title: 'Users',
+                                  subtitle: _loading
+                                      ? 'Loading…'
+                                      : '${_users.length} accounts · $pending awaiting approval',
                                 ),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: 20),
-                        ],
-                        if (_section == 0) ...[
-                          SearchField(
-                            hint: 'Search by name, email or branch',
-                            onChanged: (v) => setState(() => _query = v),
-                          ),
-                          const SizedBox(height: 12),
-                          SingleChildScrollView(
-                            scrollDirection: Axis.horizontal,
-                            child: Row(
-                              children: [
-                                FilterPill(
-                                  label: 'All (${_users.length})',
-                                  selected: _filter == _Filter.all,
-                                  onTap: () => setState(() => _filter = _Filter.all),
+                                const SizedBox(height: 16),
+                                ValueListenableBuilder<int>(
+                                  valueListenable: stockAccessPendingCount,
+                                  builder: (_, accessPending, _) => ValueListenableBuilder<int>(
+                                    valueListenable: catalogAccessPendingCount,
+                                    builder: (_, catalogPending, _) => SingleChildScrollView(
+                                      scrollDirection: Axis.horizontal,
+                                      child: Row(
+                                        children: [
+                                          FilterPill(
+                                            label: 'Staff',
+                                            selected: _section == 0,
+                                            onTap: () => setState(() => _section = 0),
+                                          ),
+                                          const SizedBox(width: 8),
+                                          FilterPill(
+                                            label: accessPending > 0
+                                                ? 'Stock access ($accessPending)'
+                                                : 'Stock access',
+                                            selected: _section == 1,
+                                            onTap: () => setState(() => _section = 1),
+                                          ),
+                                          const SizedBox(width: 8),
+                                          FilterPill(
+                                            label: catalogPending > 0
+                                                ? 'Catalog access ($catalogPending)'
+                                                : 'Catalog access',
+                                            selected: _section == 2,
+                                            onTap: () => setState(() => _section = 2),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
                                 ),
-                                const SizedBox(width: 8),
-                                FilterPill(
-                                  label: 'Pending ($pending)',
-                                  selected: _filter == _Filter.pending,
-                                  onTap: () => setState(() => _filter = _Filter.pending),
+                                const SizedBox(height: 20),
+                              ],
+                              if (_section == 0) ...[
+                                SearchField(
+                                  hint: 'Search by name, email or branch',
+                                  onChanged: (v) => setState(() => _query = v),
                                 ),
-                                const SizedBox(width: 8),
-                                FilterPill(
-                                  label: 'Active ($active)',
-                                  selected: _filter == _Filter.active,
-                                  onTap: () => setState(() => _filter = _Filter.active),
+                                const SizedBox(height: 12),
+                                SingleChildScrollView(
+                                  scrollDirection: Axis.horizontal,
+                                  child: Row(
+                                    children: [
+                                      FilterPill(
+                                        label: 'All (${_users.length})',
+                                        selected: _filter == _Filter.all,
+                                        onTap: () => setState(() => _filter = _Filter.all),
+                                      ),
+                                      const SizedBox(width: 8),
+                                      FilterPill(
+                                        label: 'Pending ($pending)',
+                                        selected: _filter == _Filter.pending,
+                                        onTap: () => setState(() => _filter = _Filter.pending),
+                                      ),
+                                      const SizedBox(width: 8),
+                                      FilterPill(
+                                        label: 'Active ($active)',
+                                        selected: _filter == _Filter.active,
+                                        onTap: () => setState(() => _filter = _Filter.active),
+                                      ),
+                                    ],
+                                  ),
                                 ),
                               ],
-                            ),
+                            ],
                           ),
-                          const SizedBox(height: 16),
-                          _body(wide),
-                        ] else if (_section == 1)
-                          StockAccessSection(
-                            key: ValueKey(_accessNonce),
-                            initialTab: _accessTab,
-                          )
-                        else
-                          CatalogAccessSection(
-                            key: ValueKey(_accessNonce),
-                            initialTab: _accessTab,
-                          ),
-                      ],
-                    ),
+                        ),
+                      ),
+                      ..._buildBodySlivers(wide, horizontalPadding),
+                      const SliverToBoxAdapter(child: SizedBox(height: 48)),
+                    ],
                   ),
                 ),
               );
@@ -330,62 +335,126 @@ class _UsersScreenState extends State<UsersScreen> {
     );
   }
 
-  Widget _body(bool wide) {
-    if (_loading) {
-      return const Padding(
-        padding: EdgeInsets.only(top: 80),
-        child: Center(child: CircularProgressIndicator(color: kPrimary)),
-      );
+  List<Widget> _buildBodySlivers(bool wide, double horizontalPadding) {
+    if (_section == 1) {
+      return [
+        SliverPadding(
+          padding: EdgeInsets.symmetric(horizontal: horizontalPadding),
+          sliver: SliverToBoxAdapter(
+            child: StockAccessSection(
+              key: ValueKey(_accessNonce),
+              initialTab: _accessTab,
+            ),
+          ),
+        ),
+      ];
     }
-    if (_error != null) return ErrorState(message: _error!, onRetry: _load);
+    if (_section == 2) {
+      return [
+        SliverPadding(
+          padding: EdgeInsets.symmetric(horizontal: horizontalPadding),
+          sliver: SliverToBoxAdapter(
+            child: CatalogAccessSection(
+              key: ValueKey(_accessNonce),
+              initialTab: _accessTab,
+            ),
+          ),
+        ),
+      ];
+    }
+
+    if (_loading) {
+      return const [
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: EdgeInsets.only(top: 80),
+            child: Center(child: CircularProgressIndicator(color: kPrimary)),
+          ),
+        ),
+      ];
+    }
+    if (_error != null) {
+      return [
+        SliverPadding(
+          padding: EdgeInsets.symmetric(horizontal: horizontalPadding),
+          sliver: SliverToBoxAdapter(
+            child: ErrorState(message: _error!, onRetry: _load),
+          ),
+        ),
+      ];
+    }
 
     final list = _visible;
     if (list.isEmpty) {
       final searching = _query.trim().isNotEmpty || _filter != _Filter.all;
-      return EmptyState(
-        icon: Icons.people_outline,
-        title: searching ? 'No matching users' : 'No users yet',
-        message: searching
-            ? 'Try a different search or filter.'
-            : 'People who sign up will appear here so you can assign them to a branch.',
-      );
+      return [
+        SliverPadding(
+          padding: EdgeInsets.symmetric(horizontal: horizontalPadding),
+          sliver: SliverToBoxAdapter(
+            child: EmptyState(
+              icon: Icons.people_outline,
+              title: searching ? 'No matching users' : 'No users yet',
+              message: searching
+                  ? 'Try a different search or filter.'
+                  : 'People who sign up will appear here so you can assign them to a branch.',
+            ),
+          ),
+        ),
+      ];
     }
 
     if (wide) {
-      return Container(
-        decoration: BoxDecoration(border: Border.all(color: kBorder), borderRadius: BorderRadius.circular(4)),
-        clipBehavior: Clip.antiAlias,
-        child: Column(
-          children: [
-            const _TableHeader(),
-            ...List.generate(list.length, (i) {
-              final u = list[i];
-              return _UserRow(
-                user: u,
-                isLast: i == list.length - 1,
-                isSelf: _isSelf(u),
-                onAssign: () => _assign(u),
-                onMenu: (v) => _onMenu(v, u),
-              );
-            }),
-          ],
+      return [
+        SliverPadding(
+          padding: EdgeInsets.symmetric(horizontal: horizontalPadding),
+          sliver: SliverToBoxAdapter(
+            child: Container(
+              decoration: BoxDecoration(
+                border: Border.all(color: kBorder),
+                borderRadius: BorderRadius.circular(4),
+              ),
+              clipBehavior: Clip.antiAlias,
+              child: Column(
+                children: [
+                  const _TableHeader(),
+                  ...List.generate(list.length, (i) {
+                    final u = list[i];
+                    return _UserRow(
+                      key: ValueKey(u.id),
+                      user: u,
+                      isLast: i == list.length - 1,
+                      isSelf: _isSelf(u),
+                      onAssign: () => _assign(u),
+                      onMenu: (v) => _onMenu(v, u),
+                    );
+                  }),
+                ],
+              ),
+            ),
+          ),
         ),
-      );
+      ];
     }
 
-    return Column(
-      children: list
-          .map((u) => Padding(
-        padding: const EdgeInsets.only(bottom: 12),
-        child: _UserCard(
-          user: u,
-          isSelf: _isSelf(u),
-          onAssign: () => _assign(u),
-          onMenu: (v) => _onMenu(v, u),
+    return [
+      SliverPadding(
+        padding: EdgeInsets.symmetric(horizontal: horizontalPadding),
+        sliver: SliverList.separated(
+          itemCount: list.length,
+          separatorBuilder: (_, _) => const SizedBox(height: 12),
+          itemBuilder: (_, i) {
+            final u = list[i];
+            return _UserCard(
+              key: ValueKey(u.id),
+              user: u,
+              isSelf: _isSelf(u),
+              onAssign: () => _assign(u),
+              onMenu: (v) => _onMenu(v, u),
+            );
+          },
         ),
-      ))
-          .toList(),
-    );
+      ),
+    ];
   }
 }
 
@@ -472,6 +541,7 @@ class _UserRow extends StatelessWidget {
   final ValueChanged<String> onMenu;
 
   const _UserRow({
+    super.key,
     required this.user,
     required this.isSelf,
     required this.isLast,
@@ -563,6 +633,7 @@ class _UserCard extends StatelessWidget {
   final ValueChanged<String> onMenu;
 
   const _UserCard({
+    super.key,
     required this.user,
     required this.isSelf,
     required this.onAssign,

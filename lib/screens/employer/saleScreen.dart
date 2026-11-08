@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:pdf/pdf.dart';
 
@@ -51,6 +53,7 @@ class _SaleScreenState extends State<SaleScreen> {
   final _searchFocus = FocusNode();
   final _cashCtrl = TextEditingController();
   final _partCtrl = TextEditingController();
+  Timer? _searchDebounce;
 
   List<ReportBranchLite> _branches = [];
   String? _adminBranchId;
@@ -100,6 +103,7 @@ class _SaleScreenState extends State<SaleScreen> {
   @override
   void dispose() {
     stockChanged.removeListener(_onStockChanged);
+    _searchDebounce?.cancel();
     _searchCtrl.dispose();
     _searchFocus.dispose();
     _cashCtrl.dispose();
@@ -1013,7 +1017,16 @@ class _SaleScreenState extends State<SaleScreen> {
       autofocus: autofocus,
       onChanged: (v) {
         setState(() => _search = v);
-        _searchItems(silent: true);
+        // Immediate clear so the list resets without waiting for debounce.
+        if (v.isEmpty) {
+          _searchDebounce?.cancel();
+          _searchItems(silent: true);
+          return;
+        }
+        _searchDebounce?.cancel();
+        _searchDebounce = Timer(const Duration(milliseconds: 250), () {
+          if (mounted) _searchItems(silent: true);
+        });
       },
       style: empSans(15, color: empInk),
       textInputAction: TextInputAction.search,
@@ -1024,6 +1037,7 @@ class _SaleScreenState extends State<SaleScreen> {
             : IconButton(
                 icon: const Icon(Icons.clear, size: 18, color: empMuted),
                 onPressed: () {
+                  _searchDebounce?.cancel();
                   _searchCtrl.clear();
                   setState(() => _search = '');
                   _searchItems(silent: true);
@@ -1093,18 +1107,22 @@ class _SaleScreenState extends State<SaleScreen> {
         border: Border.all(color: empBorder),
         borderRadius: BorderRadius.circular(4),
       ),
-      child: Column(
-        children: List.generate(_items.length, (i) {
+      child: ListView.separated(
+        shrinkWrap: true,
+        physics: const NeverScrollableScrollPhysics(),
+        itemCount: _items.length,
+        separatorBuilder: (_, _) =>
+            const Divider(height: 1, color: empBorder),
+        itemBuilder: (_, i) {
           final item = _items[i];
-          final isLast = i == _items.length - 1;
           return _ItemRow(
+            key: ValueKey(item.itemId),
             item: item,
             price: _saleType == 'wholesale' ? item.wholesale : item.retail,
             saleType: _saleType,
-            isLast: isLast,
             onAdd: () => _add(item),
           );
-        }),
+        },
       ),
     );
   }
@@ -1295,13 +1313,12 @@ class _ItemRow extends StatelessWidget {
   final SaleItem item;
   final double price;
   final String saleType;
-  final bool isLast;
   final VoidCallback onAdd;
   const _ItemRow({
+    super.key,
     required this.item,
     required this.price,
     required this.saleType,
-    required this.isLast,
     required this.onAdd,
   });
 
@@ -1310,11 +1327,8 @@ class _ItemRow extends StatelessWidget {
     final enabled = item.inStock;
     return Opacity(
       opacity: enabled ? 1 : 0.5,
-      child: Container(
+      child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-        decoration: BoxDecoration(
-          border: isLast ? null : const Border(bottom: BorderSide(color: empBorder)),
-        ),
         child: Row(
           children: [
             Expanded(
@@ -1689,13 +1703,26 @@ class _CustomerSheetState extends State<_CustomerSheet> {
   bool _adding = false;
   bool _saving = false;
   String? _error;
+  Timer? _searchDebounce;
 
   @override
   void dispose() {
+    _searchDebounce?.cancel();
     _searchCtrl.dispose();
     _nameCtrl.dispose();
     _phoneCtrl.dispose();
     super.dispose();
+  }
+
+  void _onSearchChanged(String q) {
+    _searchDebounce?.cancel();
+    if (q.trim().isEmpty) {
+      setState(() => _results = []);
+      return;
+    }
+    _searchDebounce = Timer(const Duration(milliseconds: 250), () {
+      if (mounted) _search(q);
+    });
   }
 
   Future<void> _search(String q) async {
@@ -1750,13 +1777,10 @@ class _CustomerSheetState extends State<_CustomerSheet> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          TextField(
+          EmpSearchField(
             controller: _searchCtrl,
-            onChanged: _search,
-            style: empSans(14, color: empInk),
-            decoration: empField('Search name…').copyWith(
-              prefixIcon: const Icon(Icons.search, size: 20, color: empMuted),
-            ),
+            hint: 'Search name…',
+            onChanged: _onSearchChanged,
           ),
           const SizedBox(height: 8),
           if (_searching)
@@ -1979,8 +2003,13 @@ class _HistoryBlock extends StatelessWidget {
         border: Border.all(color: empBorder),
         borderRadius: BorderRadius.circular(4),
       ),
-      child: Column(
-        children: List.generate(sales.length, (i) {
+      child: ListView.separated(
+        shrinkWrap: true,
+        physics: const NeverScrollableScrollPhysics(),
+        itemCount: sales.length,
+        separatorBuilder: (_, _) =>
+            const Divider(height: 1, color: empBorder),
+        itemBuilder: (_, i) {
           final s = sales[i];
           var time = '';
           try {
@@ -1992,15 +2021,10 @@ class _HistoryBlock extends StatelessWidget {
             color: Colors.transparent,
             child: InkWell(
               onTap: () => onTap(s),
-              child: Container(
+              child: Padding(
                 padding: const EdgeInsets.symmetric(
                   horizontal: 16,
                   vertical: 11,
-                ),
-                decoration: BoxDecoration(
-                  border: i == sales.length - 1
-                      ? null
-                      : const Border(bottom: BorderSide(color: empBorder)),
                 ),
                 child: Row(
                   children: [
@@ -2038,7 +2062,7 @@ class _HistoryBlock extends StatelessWidget {
               ),
             ),
           );
-        }),
+        },
       ),
     );
   }

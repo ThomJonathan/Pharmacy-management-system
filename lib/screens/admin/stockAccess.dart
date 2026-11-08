@@ -284,27 +284,33 @@ class _StockAccessSectionState extends State<StockAccessSection> {
         return Container(
           decoration: BoxDecoration(border: Border.all(color: kBorder), borderRadius: BorderRadius.circular(4)),
           clipBehavior: Clip.antiAlias,
-          child: Column(
-            children: [
-              for (int i = 0; i < rows.length; i++)
-                _RequestRow(
-                  request: rows[i],
-                  isLast: i == rows.length - 1,
-                  onTap: () => _openDetail(rows[i]),
-                  onApprove: () => _approve(rows[i]),
-                  onDeny: () => _deny(rows[i]),
-                ),
-            ],
+          child: ListView.builder(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            itemCount: rows.length,
+            itemBuilder: (_, i) => _RequestRow(
+              key: ValueKey(rows[i].id),
+              request: rows[i],
+              isLast: i == rows.length - 1,
+              onTap: () => _openDetail(rows[i]),
+              onApprove: () => _approve(rows[i]),
+              onDeny: () => _deny(rows[i]),
+            ),
           ),
         );
       }
-      return Column(
-        children: [
-          for (final r in rows) ...[
-            _RequestCard(request: r, onTap: () => _openDetail(r), onApprove: () => _approve(r), onDeny: () => _deny(r)),
-            const SizedBox(height: 10),
-          ],
-        ],
+      return ListView.separated(
+        shrinkWrap: true,
+        physics: const NeverScrollableScrollPhysics(),
+        itemCount: rows.length,
+        separatorBuilder: (_, _) => const SizedBox(height: 10),
+        itemBuilder: (_, i) => _RequestCard(
+          key: ValueKey(rows[i].id),
+          request: rows[i],
+          onTap: () => _openDetail(rows[i]),
+          onApprove: () => _approve(rows[i]),
+          onDeny: () => _deny(rows[i]),
+        ),
       );
     });
   }
@@ -323,32 +329,33 @@ class _StockAccessSectionState extends State<StockAccessSection> {
         return Container(
           decoration: BoxDecoration(border: Border.all(color: kBorder), borderRadius: BorderRadius.circular(4)),
           clipBehavior: Clip.antiAlias,
-          child: Column(
-            children: [
-              for (int i = 0; i < rows.length; i++)
-                _ActiveRow(
-                  request: rows[i],
-                  isLast: i == rows.length - 1,
-                  onTap: () => _openDetail(rows[i]),
-                  onRemove: () => _remove(rows[i]),
-                  onActivity: () => _viewActivity(rows[i]),
-                ),
-            ],
+          child: ListView.builder(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            itemCount: rows.length,
+            itemBuilder: (_, i) => _ActiveRow(
+              key: ValueKey(rows[i].id),
+              request: rows[i],
+              isLast: i == rows.length - 1,
+              onTap: () => _openDetail(rows[i]),
+              onRemove: () => _remove(rows[i]),
+              onActivity: () => _viewActivity(rows[i]),
+            ),
           ),
         );
       }
-      return Column(
-        children: [
-          for (final r in rows) ...[
-            _ActiveCard(
-              request: r,
-              onTap: () => _openDetail(r),
-              onRemove: () => _remove(r),
-              onActivity: () => _viewActivity(r),
-            ),
-            const SizedBox(height: 10),
-          ],
-        ],
+      return ListView.separated(
+        shrinkWrap: true,
+        physics: const NeverScrollableScrollPhysics(),
+        itemCount: rows.length,
+        separatorBuilder: (_, _) => const SizedBox(height: 10),
+        itemBuilder: (_, i) => _ActiveCard(
+          key: ValueKey(rows[i].id),
+          request: rows[i],
+          onTap: () => _openDetail(rows[i]),
+          onRemove: () => _remove(rows[i]),
+          onActivity: () => _viewActivity(rows[i]),
+        ),
       );
     });
   }
@@ -464,15 +471,16 @@ class _StockAccessSectionState extends State<StockAccessSection> {
           Container(
             decoration: BoxDecoration(border: Border.all(color: kBorder), borderRadius: BorderRadius.circular(4)),
             clipBehavior: Clip.antiAlias,
-            child: Column(
-              children: [
-                for (int i = 0; i < rows.length; i++)
-                  _HistoryRow(
-                    request: rows[i],
-                    isLast: i == rows.length - 1,
-                    onTap: () => _openDetail(rows[i]),
-                  ),
-              ],
+            child: ListView.builder(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              itemCount: rows.length,
+              itemBuilder: (_, i) => _HistoryRow(
+                key: ValueKey(rows[i].id),
+                request: rows[i],
+                isLast: i == rows.length - 1,
+                onTap: () => _openDetail(rows[i]),
+              ),
             ),
           ),
       ],
@@ -520,6 +528,7 @@ class _RequestRow extends StatelessWidget {
   final VoidCallback onApprove;
   final VoidCallback onDeny;
   const _RequestRow({
+    super.key,
     required this.request,
     required this.isLast,
     required this.onTap,
@@ -589,6 +598,7 @@ class _RequestCard extends StatelessWidget {
   final VoidCallback onApprove;
   final VoidCallback onDeny;
   const _RequestCard({
+    super.key,
     required this.request,
     required this.onTap,
     required this.onApprove,
@@ -670,6 +680,7 @@ class _ActiveRow extends StatelessWidget {
   final VoidCallback onRemove;
   final VoidCallback onActivity;
   const _ActiveRow({
+    super.key,
     required this.request,
     required this.isLast,
     required this.onTap,
@@ -745,6 +756,7 @@ class _ActiveCard extends StatelessWidget {
   final VoidCallback onRemove;
   final VoidCallback onActivity;
   const _ActiveCard({
+    super.key,
     required this.request,
     required this.onTap,
     required this.onRemove,
@@ -830,7 +842,12 @@ class _HistoryRow extends StatelessWidget {
   final StockAccessRequest request;
   final bool isLast;
   final VoidCallback onTap;
-  const _HistoryRow({required this.request, required this.isLast, required this.onTap});
+  const _HistoryRow({
+    super.key,
+    required this.request,
+    required this.isLast,
+    required this.onTap,
+  });
 
   @override
   Widget build(BuildContext context) {

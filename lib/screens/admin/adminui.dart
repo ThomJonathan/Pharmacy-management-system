@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
@@ -225,27 +227,64 @@ class FilterPill extends StatelessWidget {
   }
 }
 
-class SearchField extends StatelessWidget {
+class SearchField extends StatefulWidget {
   final String hint;
   final ValueChanged<String> onChanged;
   final TextEditingController? controller;
+  final Duration debounceDuration;
 
   const SearchField({
     super.key,
     required this.hint,
     required this.onChanged,
     this.controller,
+    this.debounceDuration = const Duration(milliseconds: 250),
   });
+
+  @override
+  State<SearchField> createState() => _SearchFieldState();
+}
+
+class _SearchFieldState extends State<SearchField> {
+  Timer? _debounceTimer;
+
+  @override
+  void dispose() {
+    _debounceTimer?.cancel();
+    super.dispose();
+  }
+
+  void _onTextChanged(String text) {
+    if (widget.debounceDuration == Duration.zero) {
+      widget.onChanged(text);
+      return;
+    }
+    _debounceTimer?.cancel();
+    if (text.isEmpty) {
+      // Immediate response on clear
+      widget.onChanged(text);
+      return;
+    }
+    _debounceTimer = Timer(widget.debounceDuration, () {
+      if (mounted) {
+        widget.onChanged(text);
+      }
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
     return TextField(
-      controller: controller,
-      onChanged: onChanged,
+      controller: widget.controller,
+      onChanged: _onTextChanged,
+      onSubmitted: (val) {
+        _debounceTimer?.cancel();
+        widget.onChanged(val);
+      },
       style: sans(14, color: kInk),
       cursorColor: kPrimary,
       decoration: InputDecoration(
-        hintText: hint,
+        hintText: widget.hint,
         hintStyle: sans(13.5, color: kInkMuted),
         prefixIcon: const Icon(Icons.search, size: 18, color: kInkMuted),
         filled: true,

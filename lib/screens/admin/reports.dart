@@ -1660,60 +1660,66 @@ class _BestTab extends StatelessWidget {
             message: 'Sales in this period will rank the best sellers here.',
           )
         else
-          for (int i = 0; i < items.length; i++) ...[
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                border: Border.all(
-                  color: i == 0 ? const Color(0xFFC9A227) : kBorder,
-                  width: i == 0 ? 1.5 : 1,
+          ListView.separated(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            itemCount: items.length,
+            separatorBuilder: (_, _) => const SizedBox(height: 8),
+            itemBuilder: (_, i) {
+              return Container(
+                key: ValueKey(items[i].itemId),
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  border: Border.all(
+                    color: i == 0 ? const Color(0xFFC9A227) : kBorder,
+                    width: i == 0 ? 1.5 : 1,
+                  ),
+                  borderRadius: BorderRadius.circular(4),
                 ),
-                borderRadius: BorderRadius.circular(4),
-              ),
-              child: Row(
-                children: [
-                  SizedBox(
-                    width: 28,
-                    child: Text(
-                      '${i + 1}',
-                      style: mono(
-                        14,
-                        weight: FontWeight.w700,
-                        color: i == 0 ? const Color(0xFFC9A227) : kInkMuted,
+                child: Row(
+                  children: [
+                    SizedBox(
+                      width: 28,
+                      child: Text(
+                        '${i + 1}',
+                        style: mono(
+                          14,
+                          weight: FontWeight.w700,
+                          color: i == 0 ? const Color(0xFFC9A227) : kInkMuted,
+                        ),
                       ),
                     ),
-                  ),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          items[i].itemName,
-                          style: sans(
-                            13.5,
-                            weight: FontWeight.w600,
-                            color: kInk,
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            items[i].itemName,
+                            style: sans(
+                              13.5,
+                              weight: FontWeight.w600,
+                              color: kInk,
+                            ),
                           ),
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          sub(items[i]),
-                          style: sans(11.5, color: kInkMuted),
-                        ),
-                      ],
+                          const SizedBox(height: 2),
+                          Text(
+                            sub(items[i]),
+                            style: sans(11.5, color: kInkMuted),
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
-                  const SizedBox(width: 10),
-                  Text(
-                    metric(items[i]),
-                    style: mono(13.5, weight: FontWeight.w700, color: kPrimary),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 8),
-          ],
+                    const SizedBox(width: 10),
+                    Text(
+                      metric(items[i]),
+                      style: mono(13.5, weight: FontWeight.w700, color: kPrimary),
+                    ),
+                  ],
+                ),
+              );
+            },
+          ),
       ],
     );
   }
@@ -1879,13 +1885,17 @@ class _ExpensesTab extends StatelessWidget {
             border: Border.all(color: kBorder),
             borderRadius: BorderRadius.circular(4),
           ),
-          child: Column(
-            children: List.generate(bundle.expenses.length, (i) {
+          child: ListView.builder(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            itemCount: bundle.expenses.length,
+            itemBuilder: (_, i) {
               final e = bundle.expenses[i];
               final title = e.description.trim().isNotEmpty
                   ? e.description.trim()
                   : e.category;
               return Container(
+                key: ValueKey(e.id),
                 padding: const EdgeInsets.symmetric(
                   horizontal: 16,
                   vertical: 11,
@@ -1925,7 +1935,7 @@ class _ExpensesTab extends StatelessWidget {
                   ],
                 ),
               );
-            }),
+            },
           ),
         ),
       ],
@@ -2012,15 +2022,22 @@ class _DebtsTab extends StatelessWidget {
             message: 'Nobody owes money right now.',
           )
         else
-          for (final c in customers) ...[
-            _DebtRow(
-              title: c.name,
-              sub: branchFiltered ? 'owes' : c.branchName,
-              amount: 'MK ${_fmtMk(c.balance)}',
-              onTap: () => onCustomerTap(c),
-            ),
-            const SizedBox(height: 8),
-          ],
+          ListView.separated(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            itemCount: customers.length,
+            separatorBuilder: (_, _) => const SizedBox(height: 8),
+            itemBuilder: (_, i) {
+              final c = customers[i];
+              return _DebtRow(
+                key: ValueKey(c.customerId),
+                title: c.name,
+                sub: branchFiltered ? 'owes' : c.branchName,
+                amount: 'MK ${_fmtMk(c.balance)}',
+                onTap: () => onCustomerTap(c),
+              );
+            },
+          ),
         const SizedBox(height: 16),
         Text(
           'Supplier balances (${suppliers.length})',
@@ -2041,16 +2058,23 @@ class _DebtsTab extends StatelessWidget {
             message: 'All supplier invoices are settled.',
           )
         else
-          for (final s in suppliers) ...[
-            _DebtRow(
-              title: s.supplierName,
-              sub: 'we owe',
-              amount: 'MK ${_fmtMk(s.amountOwed)}',
-              danger: true,
-              onTap: () => onSupplierTap(s),
-            ),
-            const SizedBox(height: 8),
-          ],
+          ListView.separated(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            itemCount: suppliers.length,
+            separatorBuilder: (_, _) => const SizedBox(height: 8),
+            itemBuilder: (_, i) {
+              final s = suppliers[i];
+              return _DebtRow(
+                key: ValueKey(s.supplierId),
+                title: s.supplierName,
+                sub: 'we owe',
+                amount: 'MK ${_fmtMk(s.amountOwed)}',
+                danger: true,
+                onTap: () => onSupplierTap(s),
+              );
+            },
+          ),
       ],
     );
   }
@@ -2099,6 +2123,7 @@ class _DebtRow extends StatelessWidget {
   final bool danger;
   final VoidCallback onTap;
   const _DebtRow({
+    super.key,
     required this.title,
     required this.sub,
     required this.amount,
