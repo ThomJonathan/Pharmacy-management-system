@@ -2649,6 +2649,204 @@ class _FiltersSheetState extends State<_FiltersSheet> {
 }
 
 // ============================================================================
+// CATALOG ITEM PICKER — searchable replacement for a long item dropdown.
+//   Filters the already-loaded catalog locally, so typing is instant and the
+//   picker works even on slow connections.
+// ============================================================================
+
+class _CatalogPickerSheet extends StatefulWidget {
+  final List<CatalogItem> items;
+  final String? selectedId;
+
+  const _CatalogPickerSheet({required this.items, this.selectedId});
+
+  @override
+  State<_CatalogPickerSheet> createState() => _CatalogPickerSheetState();
+}
+
+class _CatalogPickerSheetState extends State<_CatalogPickerSheet> {
+  final _searchCtrl = TextEditingController();
+  String _query = '';
+
+  @override
+  void dispose() {
+    _searchCtrl.dispose();
+    super.dispose();
+  }
+
+  List<CatalogItem> get _results {
+    final q = _query.trim().toLowerCase();
+    final sorted = [...widget.items]
+      ..sort(
+        (a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()),
+      );
+    if (q.isEmpty) return sorted;
+    return sorted
+        .where(
+          (i) =>
+              i.name.toLowerCase().contains(q) ||
+              i.category.toLowerCase().contains(q) ||
+              i.businessTypeName.toLowerCase().contains(q) ||
+              i.unit.toLowerCase().contains(q),
+        )
+        .toList();
+  }
+
+  void _clear() {
+    _searchCtrl.clear();
+    setState(() => _query = '');
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final results = _results;
+    return SheetFrame(
+      title: 'Pick item',
+      subtitle: 'Search by item name, category or business type.',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          TextField(
+            controller: _searchCtrl,
+            autofocus: true,
+            textInputAction: TextInputAction.search,
+            onChanged: (v) => setState(() => _query = v),
+            style: sans(14, color: kInk),
+            decoration: fieldDecoration('Search items').copyWith(
+              prefixIcon: const Icon(Icons.search, size: 18, color: kInkMuted),
+              suffixIcon: _query.trim().isEmpty
+                  ? null
+                  : IconButton(
+                      icon: const Icon(
+                        Icons.clear,
+                        size: 18,
+                        color: kInkMuted,
+                      ),
+                      tooltip: 'Clear search',
+                      onPressed: _clear,
+                    ),
+            ),
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  _query.trim().isEmpty
+                      ? '${results.length} ${results.length == 1 ? 'item' : 'items'}'
+                      : '${results.length} of ${widget.items.length} items match',
+                  style: sans(12, weight: FontWeight.w600, color: kInkMuted),
+                ),
+              ),
+              if (_query.trim().isNotEmpty)
+                TextButton(
+                  onPressed: _clear,
+                  style: TextButton.styleFrom(
+                    foregroundColor: kPrimary,
+                    minimumSize: const Size(0, 32),
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                  ),
+                  child: const Text('Clear'),
+                ),
+            ],
+          ),
+          const SizedBox(height: 2),
+          if (widget.items.isEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 20),
+              child: Text(
+                'No active catalog items available. Add a catalog item first.',
+                textAlign: TextAlign.center,
+                style: sans(12.5, color: kInkMuted),
+              ),
+            )
+          else if (results.isEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 20),
+              child: Column(
+                children: [
+                  Text(
+                    'No items match “${_query.trim()}”.',
+                    textAlign: TextAlign.center,
+                    style: sans(12.5, weight: FontWeight.w600, color: kInk),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Try the item name, category or business type.',
+                    textAlign: TextAlign.center,
+                    style: sans(12, color: kInkMuted),
+                  ),
+                ],
+              ),
+            )
+          else
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxHeight: 320),
+              child: ListView.builder(
+                shrinkWrap: true,
+                itemCount: results.length,
+                itemBuilder: (context, index) {
+                  final item = results[index];
+                  final selected = item.id == widget.selectedId;
+                  return Material(
+                    color: selected ? kPrimaryTint : Colors.transparent,
+                    child: InkWell(
+                      onTap: () => Navigator.of(context).pop(item),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 4,
+                          vertical: 10,
+                        ),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    item.name,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: sans(
+                                      13.5,
+                                      weight: FontWeight.w600,
+                                      color: kInk,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 1),
+                                  Text(
+                                    '${item.category} · ${item.unit}'
+                                    '${item.businessTypeName.isNotEmpty ? ' · ${item.businessTypeName}' : ''}',
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: sans(11.5, color: kInkMuted),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Icon(
+                              selected
+                                  ? Icons.check_circle
+                                  : Icons.chevron_right,
+                              size: 18,
+                              color: selected ? kPrimary : kInkMuted,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+// ============================================================================
 // ADD STOCK SHEET — creates one sellable batch for a selected branch
 // ============================================================================
 
@@ -2679,6 +2877,28 @@ class _AddStockSheetState extends State<_AddStockSheet> {
   DateTime? _expiryDate;
   bool _saving = false;
   String? _error;
+
+  CatalogItem? get _selectedItem {
+    for (final item in widget.items) {
+      if (item.id == _itemId) return item;
+    }
+    return null;
+  }
+
+  Future<void> _pickItem() async {
+    final picked = await showAdaptiveSheet<CatalogItem>(
+      context,
+      builder: (_) => _CatalogPickerSheet(
+        items: widget.items,
+        selectedId: _itemId,
+      ),
+    );
+    if (picked == null || !mounted) return;
+    setState(() {
+      _itemId = picked.id;
+      _selectedUnit = picked.unit;
+    });
+  }
 
   @override
   void dispose() {
@@ -2797,29 +3017,41 @@ class _AddStockSheetState extends State<_AddStockSheet> {
                 : (value) => setState(() => _branchId = value),
           ),
           const SizedBox(height: 12),
-          DropdownButtonFormField<String>(
-            initialValue: _itemId,
-            decoration: fieldDecoration('Item'),
-            items: widget.items
-                .map(
-                  (item) => DropdownMenuItem(
-                    value: item.id,
-                    child: Text('${item.name} · ${item.unit}'),
-                  ),
-                )
-                .toList(),
-            onChanged: _saving
-                ? null
-                : (value) {
-                    final it = widget.items.cast<CatalogItem?>().firstWhere(
-                      (i) => i?.id == value,
-                      orElse: () => null,
-                    );
-                    setState(() {
-                      _itemId = value;
-                      _selectedUnit = it?.unit;
-                    });
-                  },
+          Semantics(
+            button: true,
+            label: _selectedItem == null
+                ? 'Select item'
+                : 'Selected item ${_selectedItem!.name}. Tap to change',
+            child: InkWell(
+              onTap: _saving ? null : _pickItem,
+              borderRadius: BorderRadius.circular(4),
+              child: InputDecorator(
+                decoration: fieldDecoration('Item'),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        _selectedItem == null
+                            ? 'Search and pick an item…'
+                            : '${_selectedItem!.name} · ${_selectedItem!.unit}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: sans(
+                          14,
+                          color: _selectedItem == null ? kInkMuted : kInk,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    const Icon(
+                      Icons.search,
+                      size: 18,
+                      color: kInkMuted,
+                    ),
+                  ],
+                ),
+              ),
+            ),
           ),
           if (_itemId != null) ...[
             Builder(

@@ -46,7 +46,14 @@ class BranchStockRow {
 class CatalogOption {
   final String id;
   final String name;
-  const CatalogOption({required this.id, required this.name});
+  final String? category;
+  final String? unit;
+  const CatalogOption({
+    required this.id,
+    required this.name,
+    this.category,
+    this.unit,
+  });
 }
 
 class EmployeeCatalogItem {
@@ -202,10 +209,27 @@ class CashierStockRepository {
   }
 
   Future<List<CatalogOption>> searchCatalog(String query) async {
-    dynamic q = _client.from('items').select('id, name').eq('is_active', true);
-    if (query.trim().isNotEmpty) q = q.ilike('name', '%${query.trim()}%');
-    final rows = await q.order('name').limit(30) as List;
-    return rows.map((r) => CatalogOption(id: r['id'] as String, name: (r['name'] as String?) ?? '—')).toList();
+    dynamic q = _client
+        .from('items')
+        .select('id, name, category, unit')
+        .eq('is_active', true);
+    final term = query.trim();
+    if (term.isNotEmpty) q = q.ilike('name', '%$term%');
+    final rows = await q.order('name').limit(50) as List;
+    return rows
+        .map(
+          (r) => CatalogOption(
+            id: r['id'] as String,
+            name: (r['name'] as String?) ?? '—',
+            category: (r['category'] as String?)?.trim().isNotEmpty == true
+                ? (r['category'] as String).trim()
+                : null,
+            unit: (r['unit'] as String?)?.trim().isNotEmpty == true
+                ? (r['unit'] as String).trim()
+                : null,
+          ),
+        )
+        .toList();
   }
 
   Future<List<EmployeeCatalogItem>> fetchCatalog({String query = '', bool includeInactive = false}) async {

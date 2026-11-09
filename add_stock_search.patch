@@ -1,0 +1,686 @@
+diff --git a/lib/screens/admin/inventory.dart b/lib/screens/admin/inventory.dart
+index 71fa27b..04b65b0 100644
+--- a/lib/screens/admin/inventory.dart
++++ b/lib/screens/admin/inventory.dart
+@@ -2648,6 +2648,204 @@ class _FiltersSheetState extends State<_FiltersSheet> {
+   }
+ }
+ 
++// ============================================================================
++// CATALOG ITEM PICKER — searchable replacement for a long item dropdown.
++//   Filters the already-loaded catalog locally, so typing is instant and the
++//   picker works even on slow connections.
++// ============================================================================
++
++class _CatalogPickerSheet extends StatefulWidget {
++  final List<CatalogItem> items;
++  final String? selectedId;
++
++  const _CatalogPickerSheet({required this.items, this.selectedId});
++
++  @override
++  State<_CatalogPickerSheet> createState() => _CatalogPickerSheetState();
++}
++
++class _CatalogPickerSheetState extends State<_CatalogPickerSheet> {
++  final _searchCtrl = TextEditingController();
++  String _query = '';
++
++  @override
++  void dispose() {
++    _searchCtrl.dispose();
++    super.dispose();
++  }
++
++  List<CatalogItem> get _results {
++    final q = _query.trim().toLowerCase();
++    final sorted = [...widget.items]
++      ..sort(
++        (a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()),
++      );
++    if (q.isEmpty) return sorted;
++    return sorted
++        .where(
++          (i) =>
++              i.name.toLowerCase().contains(q) ||
++              i.category.toLowerCase().contains(q) ||
++              i.businessTypeName.toLowerCase().contains(q) ||
++              i.unit.toLowerCase().contains(q),
++        )
++        .toList();
++  }
++
++  void _clear() {
++    _searchCtrl.clear();
++    setState(() => _query = '');
++  }
++
++  @override
++  Widget build(BuildContext context) {
++    final results = _results;
++    return SheetFrame(
++      title: 'Pick item',
++      subtitle: 'Search by item name, category or business type.',
++      child: Column(
++        crossAxisAlignment: CrossAxisAlignment.stretch,
++        children: [
++          TextField(
++            controller: _searchCtrl,
++            autofocus: true,
++            textInputAction: TextInputAction.search,
++            onChanged: (v) => setState(() => _query = v),
++            style: sans(14, color: kInk),
++            decoration: fieldDecoration('Search items').copyWith(
++              prefixIcon: const Icon(Icons.search, size: 18, color: kInkMuted),
++              suffixIcon: _query.trim().isEmpty
++                  ? null
++                  : IconButton(
++                      icon: const Icon(
++                        Icons.clear,
++                        size: 18,
++                        color: kInkMuted,
++                      ),
++                      tooltip: 'Clear search',
++                      onPressed: _clear,
++                    ),
++            ),
++          ),
++          const SizedBox(height: 10),
++          Row(
++            children: [
++              Expanded(
++                child: Text(
++                  _query.trim().isEmpty
++                      ? '${results.length} ${results.length == 1 ? 'item' : 'items'}'
++                      : '${results.length} of ${widget.items.length} items match',
++                  style: sans(12, weight: FontWeight.w600, color: kInkMuted),
++                ),
++              ),
++              if (_query.trim().isNotEmpty)
++                TextButton(
++                  onPressed: _clear,
++                  style: TextButton.styleFrom(
++                    foregroundColor: kPrimary,
++                    minimumSize: const Size(0, 32),
++                    padding: const EdgeInsets.symmetric(horizontal: 8),
++                  ),
++                  child: const Text('Clear'),
++                ),
++            ],
++          ),
++          const SizedBox(height: 2),
++          if (widget.items.isEmpty)
++            Padding(
++              padding: const EdgeInsets.symmetric(vertical: 20),
++              child: Text(
++                'No active catalog items available. Add a catalog item first.',
++                textAlign: TextAlign.center,
++                style: sans(12.5, color: kInkMuted),
++              ),
++            )
++          else if (results.isEmpty)
++            Padding(
++              padding: const EdgeInsets.symmetric(vertical: 20),
++              child: Column(
++                children: [
++                  Text(
++                    'No items match “${_query.trim()}”.',
++                    textAlign: TextAlign.center,
++                    style: sans(12.5, weight: FontWeight.w600, color: kInk),
++                  ),
++                  const SizedBox(height: 4),
++                  Text(
++                    'Try the item name, category or business type.',
++                    textAlign: TextAlign.center,
++                    style: sans(12, color: kInkMuted),
++                  ),
++                ],
++              ),
++            )
++          else
++            ConstrainedBox(
++              constraints: const BoxConstraints(maxHeight: 320),
++              child: ListView.builder(
++                shrinkWrap: true,
++                itemCount: results.length,
++                itemBuilder: (context, index) {
++                  final item = results[index];
++                  final selected = item.id == widget.selectedId;
++                  return Material(
++                    color: selected ? kPrimaryTint : Colors.transparent,
++                    child: InkWell(
++                      onTap: () => Navigator.of(context).pop(item),
++                      child: Padding(
++                        padding: const EdgeInsets.symmetric(
++                          horizontal: 4,
++                          vertical: 10,
++                        ),
++                        child: Row(
++                          children: [
++                            Expanded(
++                              child: Column(
++                                crossAxisAlignment: CrossAxisAlignment.start,
++                                children: [
++                                  Text(
++                                    item.name,
++                                    maxLines: 1,
++                                    overflow: TextOverflow.ellipsis,
++                                    style: sans(
++                                      13.5,
++                                      weight: FontWeight.w600,
++                                      color: kInk,
++                                    ),
++                                  ),
++                                  const SizedBox(height: 1),
++                                  Text(
++                                    '${item.category} · ${item.unit}'
++                                    '${item.businessTypeName.isNotEmpty ? ' · ${item.businessTypeName}' : ''}',
++                                    maxLines: 1,
++                                    overflow: TextOverflow.ellipsis,
++                                    style: sans(11.5, color: kInkMuted),
++                                  ),
++                                ],
++                              ),
++                            ),
++                            const SizedBox(width: 8),
++                            Icon(
++                              selected
++                                  ? Icons.check_circle
++                                  : Icons.chevron_right,
++                              size: 18,
++                              color: selected ? kPrimary : kInkMuted,
++                            ),
++                          ],
++                        ),
++                      ),
++                    ),
++                  );
++                },
++              ),
++            ),
++        ],
++      ),
++    );
++  }
++}
++
+ // ============================================================================
+ // ADD STOCK SHEET — creates one sellable batch for a selected branch
+ // ============================================================================
+@@ -2680,6 +2878,28 @@ class _AddStockSheetState extends State<_AddStockSheet> {
+   bool _saving = false;
+   String? _error;
+ 
++  CatalogItem? get _selectedItem {
++    for (final item in widget.items) {
++      if (item.id == _itemId) return item;
++    }
++    return null;
++  }
++
++  Future<void> _pickItem() async {
++    final picked = await showAdaptiveSheet<CatalogItem>(
++      context,
++      builder: (_) => _CatalogPickerSheet(
++        items: widget.items,
++        selectedId: _itemId,
++      ),
++    );
++    if (picked == null || !mounted) return;
++    setState(() {
++      _itemId = picked.id;
++      _selectedUnit = picked.unit;
++    });
++  }
++
+   @override
+   void dispose() {
+     _quantityCtrl.dispose();
+@@ -2797,29 +3017,41 @@ class _AddStockSheetState extends State<_AddStockSheet> {
+                 : (value) => setState(() => _branchId = value),
+           ),
+           const SizedBox(height: 12),
+-          DropdownButtonFormField<String>(
+-            initialValue: _itemId,
+-            decoration: fieldDecoration('Item'),
+-            items: widget.items
+-                .map(
+-                  (item) => DropdownMenuItem(
+-                    value: item.id,
+-                    child: Text('${item.name} · ${item.unit}'),
+-                  ),
+-                )
+-                .toList(),
+-            onChanged: _saving
+-                ? null
+-                : (value) {
+-                    final it = widget.items.cast<CatalogItem?>().firstWhere(
+-                      (i) => i?.id == value,
+-                      orElse: () => null,
+-                    );
+-                    setState(() {
+-                      _itemId = value;
+-                      _selectedUnit = it?.unit;
+-                    });
+-                  },
++          Semantics(
++            button: true,
++            label: _selectedItem == null
++                ? 'Select item'
++                : 'Selected item ${_selectedItem!.name}. Tap to change',
++            child: InkWell(
++              onTap: _saving ? null : _pickItem,
++              borderRadius: BorderRadius.circular(4),
++              child: InputDecorator(
++                decoration: fieldDecoration('Item'),
++                child: Row(
++                  children: [
++                    Expanded(
++                      child: Text(
++                        _selectedItem == null
++                            ? 'Search and pick an item…'
++                            : '${_selectedItem!.name} · ${_selectedItem!.unit}',
++                        maxLines: 1,
++                        overflow: TextOverflow.ellipsis,
++                        style: sans(
++                          14,
++                          color: _selectedItem == null ? kInkMuted : kInk,
++                        ),
++                      ),
++                    ),
++                    const SizedBox(width: 8),
++                    const Icon(
++                      Icons.search,
++                      size: 18,
++                      color: kInkMuted,
++                    ),
++                  ],
++                ),
++              ),
++            ),
+           ),
+           if (_itemId != null) ...[
+             Builder(
+diff --git a/lib/screens/employer/stockRepo.dart b/lib/screens/employer/stockRepo.dart
+index a144719..a292c36 100644
+--- a/lib/screens/employer/stockRepo.dart
++++ b/lib/screens/employer/stockRepo.dart
+@@ -46,7 +46,14 @@ class BranchStockRow {
+ class CatalogOption {
+   final String id;
+   final String name;
+-  const CatalogOption({required this.id, required this.name});
++  final String? category;
++  final String? unit;
++  const CatalogOption({
++    required this.id,
++    required this.name,
++    this.category,
++    this.unit,
++  });
+ }
+ 
+ class EmployeeCatalogItem {
+@@ -202,10 +209,27 @@ class CashierStockRepository {
+   }
+ 
+   Future<List<CatalogOption>> searchCatalog(String query) async {
+-    dynamic q = _client.from('items').select('id, name').eq('is_active', true);
+-    if (query.trim().isNotEmpty) q = q.ilike('name', '%${query.trim()}%');
+-    final rows = await q.order('name').limit(30) as List;
+-    return rows.map((r) => CatalogOption(id: r['id'] as String, name: (r['name'] as String?) ?? '—')).toList();
++    dynamic q = _client
++        .from('items')
++        .select('id, name, category, unit')
++        .eq('is_active', true);
++    final term = query.trim();
++    if (term.isNotEmpty) q = q.ilike('name', '%$term%');
++    final rows = await q.order('name').limit(50) as List;
++    return rows
++        .map(
++          (r) => CatalogOption(
++            id: r['id'] as String,
++            name: (r['name'] as String?) ?? '—',
++            category: (r['category'] as String?)?.trim().isNotEmpty == true
++                ? (r['category'] as String).trim()
++                : null,
++            unit: (r['unit'] as String?)?.trim().isNotEmpty == true
++                ? (r['unit'] as String).trim()
++                : null,
++          ),
++        )
++        .toList();
+   }
+ 
+   Future<List<EmployeeCatalogItem>> fetchCatalog({String query = '', bool includeInactive = false}) async {
+diff --git a/lib/screens/employer/stockScreen.dart b/lib/screens/employer/stockScreen.dart
+index 352c062..d4346bd 100644
+--- a/lib/screens/employer/stockScreen.dart
++++ b/lib/screens/employer/stockScreen.dart
+@@ -1,3 +1,5 @@
++import 'dart:async';
++
+ import 'package:flutter/material.dart';
+ 
+ import '../../appUser.dart';
+@@ -1289,7 +1291,10 @@ class _ReceiveSheetState extends State<_ReceiveSheet> {
+   Future<void> _pickItem(_ReceiveLineForm line) async {
+     final picked = await _showStockSheet<CatalogOption>(
+       context,
+-      builder: (_) => _ItemPickerSheet(repo: widget.repo),
++      builder: (_) => _ItemPickerSheet(
++        repo: widget.repo,
++        selectedId: line.item?.id,
++      ),
+     );
+     if (picked != null && mounted) setState(() => line.item = picked);
+   }
+@@ -1528,7 +1533,8 @@ class _ReceiveSheetState extends State<_ReceiveSheet> {
+ 
+ class _ItemPickerSheet extends StatefulWidget {
+   final CashierStockRepository repo;
+-  const _ItemPickerSheet({required this.repo});
++  final String? selectedId;
++  const _ItemPickerSheet({required this.repo, this.selectedId});
+ 
+   @override
+   State<_ItemPickerSheet> createState() => _ItemPickerSheetState();
+@@ -1537,82 +1543,264 @@ class _ItemPickerSheet extends StatefulWidget {
+ class _ItemPickerSheetState extends State<_ItemPickerSheet> {
+   final _searchCtrl = TextEditingController();
+   List<CatalogOption> _results = [];
+-  bool _loading = false;
++  bool _loading = true;
++  String? _error;
++  String _query = '';
++  Timer? _debounce;
++  int _requestId = 0;
++
++  @override
++  void initState() {
++    super.initState();
++    // Show a starting list instead of an empty picker; typing narrows it.
++    _fetch('');
++  }
+ 
+   @override
+   void dispose() {
++    _debounce?.cancel();
+     _searchCtrl.dispose();
+     super.dispose();
+   }
+ 
+-  Future<void> _search(String q) async {
+-    if (q.trim().length < 2) {
+-      setState(() => _results = []);
+-      return;
++  void _onChanged(String value) {
++    setState(() => _query = value);
++    _debounce?.cancel();
++    _debounce = Timer(const Duration(milliseconds: 250), () => _fetch(value));
++  }
++
++  Future<void> _fetch(String query) async {
++    final request = ++_requestId;
++    if (!_loading || _error != null) {
++      setState(() {
++        _loading = true;
++        _error = null;
++      });
+     }
+-    setState(() => _loading = true);
+     try {
+-      final res = await widget.repo.searchCatalog(q);
+-      if (!mounted) return;
+-      if (_searchCtrl.text != q) return;
++      final res = await widget.repo.searchCatalog(query);
++      if (!mounted || request != _requestId) return;
+       setState(() {
+         _results = res;
+         _loading = false;
+       });
+-    } catch (_) {
+-      if (mounted) setState(() => _loading = false);
++    } catch (e) {
++      if (!mounted || request != _requestId) return;
++      setState(() {
++        _loading = false;
++        _error = e.toString();
++      });
+     }
+   }
+ 
++  void _clear() {
++    _debounce?.cancel();
++    _searchCtrl.clear();
++    setState(() => _query = '');
++    _fetch('');
++  }
++
+   @override
+   Widget build(BuildContext context) {
+     return EmpSheetFrame(
+       title: 'Pick catalog item',
+-      subtitle: 'Type item name to search catalog.',
++      subtitle: 'Search the catalog by product name.',
+       child: Column(
+         crossAxisAlignment: CrossAxisAlignment.stretch,
+         children: [
+           TextField(
+             controller: _searchCtrl,
+-            onChanged: _search,
++            autofocus: true,
++            textInputAction: TextInputAction.search,
++            onChanged: _onChanged,
++            onSubmitted: (v) {
++              _debounce?.cancel();
++              _fetch(v);
++            },
+             style: empSans(14, color: empInk),
+             decoration: empField('Type a product name…').copyWith(
+               prefixIcon: const Icon(Icons.search, size: 18, color: empMuted),
++              suffixIcon: _query.trim().isEmpty
++                  ? null
++                  : IconButton(
++                      icon: const Icon(Icons.clear, size: 18, color: empMuted),
++                      tooltip: 'Clear search',
++                      onPressed: _clear,
++                    ),
+             ),
+           ),
+           const SizedBox(height: 10),
++          Row(
++            children: [
++              Expanded(
++                child: Text(
++                  _loading
++                      ? 'Searching catalog…'
++                      : _query.trim().isEmpty
++                          ? 'Showing ${_results.length} catalog items — type to narrow'
++                          : '${_results.length} ${_results.length == 1 ? 'match' : 'matches'} for “${_query.trim()}”',
++                  maxLines: 2,
++                  overflow: TextOverflow.ellipsis,
++                  style: empSans(12, weight: FontWeight.w600, color: empMuted),
++                ),
++              ),
++              if (_query.trim().isNotEmpty)
++                TextButton(
++                  onPressed: _clear,
++                  style: TextButton.styleFrom(
++                    foregroundColor: empPrimary,
++                    minimumSize: const Size(0, 32),
++                    padding: const EdgeInsets.symmetric(horizontal: 8),
++                  ),
++                  child: const Text('Clear'),
++                ),
++            ],
++          ),
++          const SizedBox(height: 2),
+           if (_loading)
+             const Padding(
+-              padding: EdgeInsets.symmetric(vertical: 20),
++              padding: EdgeInsets.symmetric(vertical: 24),
+               child: Center(
+                 child: SizedBox(
+                   width: 20,
+                   height: 20,
+-                  child: CircularProgressIndicator(strokeWidth: 2, color: empPrimary),
++                  child: CircularProgressIndicator(
++                    strokeWidth: 2,
++                    color: empPrimary,
++                  ),
+                 ),
+               ),
+             )
+-          else if (_results.isNotEmpty)
+-            for (final c in _results)
+-              InkWell(
+-                onTap: () => Navigator.of(context).pop(c),
+-                child: Padding(
+-                  padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
+-                  child: Row(
+-                    children: [
+-                      Expanded(
+-                        child: Text(c.name, style: empSans(13.5, weight: FontWeight.w600, color: empInk)),
+-                      ),
+-                      const Icon(Icons.chevron_right, size: 17, color: empMuted),
+-                    ],
+-                  ),
+-                ),
+-              )
+-          else if (_searchCtrl.text.trim().length >= 2)
++          else if (_error != null)
+             Padding(
+               padding: const EdgeInsets.symmetric(vertical: 16),
+-              child: Text('No items match “${_searchCtrl.text.trim()}”.',
+-                  textAlign: TextAlign.center, style: empSans(12.5, color: empMuted)),
++              child: Column(
++                children: [
++                  const Icon(
++                    Icons.error_outline,
++                    size: 22,
++                    color: empDanger,
++                  ),
++                  const SizedBox(height: 6),
++                  Text(
++                    'Could not search the catalog.',
++                    textAlign: TextAlign.center,
++                    style: empSans(12.5, weight: FontWeight.w600, color: empInk),
++                  ),
++                  const SizedBox(height: 3),
++                  Text(
++                    _error!,
++                    maxLines: 3,
++                    overflow: TextOverflow.ellipsis,
++                    textAlign: TextAlign.center,
++                    style: empSans(11.5, color: empMuted),
++                  ),
++                  const SizedBox(height: 8),
++                  OutlinedButton(
++                    onPressed: () => _fetch(_query),
++                    style: empOutlineButton(height: 36),
++                    child: const Text('Retry'),
++                  ),
++                ],
++              ),
++            )
++          else if (_results.isEmpty)
++            Padding(
++              padding: const EdgeInsets.symmetric(vertical: 20),
++              child: Column(
++                children: [
++                  Text(
++                    _query.trim().isEmpty
++                        ? 'No catalog items available.'
++                        : 'No items match “${_query.trim()}”.',
++                    textAlign: TextAlign.center,
++                    style: empSans(12.5, weight: FontWeight.w600, color: empInk),
++                  ),
++                  const SizedBox(height: 4),
++                  Text(
++                    _query.trim().isEmpty
++                        ? 'Ask the admin to add products to the catalog.'
++                        : 'Check the spelling or ask the admin to add this product.',
++                    textAlign: TextAlign.center,
++                    style: empSans(12, color: empMuted),
++                  ),
++                  if (_query.trim().isNotEmpty) ...[
++                    const SizedBox(height: 8),
++                    OutlinedButton(
++                      onPressed: _clear,
++                      style: empOutlineButton(height: 36),
++                      child: const Text('Clear search'),
++                    ),
++                  ],
++                ],
++              ),
++            )
++          else
++            ConstrainedBox(
++              constraints: const BoxConstraints(maxHeight: 320),
++              child: ListView.builder(
++                shrinkWrap: true,
++                itemCount: _results.length,
++                itemBuilder: (context, index) {
++                  final c = _results[index];
++                  final selected = c.id == widget.selectedId;
++                  final meta = [
++                    if (c.category != null && c.category!.isNotEmpty)
++                      c.category!,
++                    if (c.unit != null && c.unit!.isNotEmpty) c.unit!,
++                  ].join(' · ');
++                  return Material(
++                    color: selected ? empPrimaryTint : Colors.transparent,
++                    child: InkWell(
++                      onTap: () => Navigator.of(context).pop(c),
++                      child: Padding(
++                        padding: const EdgeInsets.symmetric(
++                          horizontal: 4,
++                          vertical: 10,
++                        ),
++                        child: Row(
++                          children: [
++                            Expanded(
++                              child: Column(
++                                crossAxisAlignment: CrossAxisAlignment.start,
++                                children: [
++                                  Text(
++                                    c.name,
++                                    maxLines: 1,
++                                    overflow: TextOverflow.ellipsis,
++                                    style: empSans(
++                                      13.5,
++                                      weight: FontWeight.w600,
++                                      color: empInk,
++                                    ),
++                                  ),
++                                  if (meta.isNotEmpty) ...[
++                                    const SizedBox(height: 1),
++                                    Text(
++                                      meta,
++                                      maxLines: 1,
++                                      overflow: TextOverflow.ellipsis,
++                                      style: empSans(11.5, color: empMuted),
++                                    ),
++                                  ],
++                                ],
++                              ),
++                            ),
++                            const SizedBox(width: 8),
++                            Icon(
++                              selected
++                                  ? Icons.check_circle
++                                  : Icons.chevron_right,
++                              size: 18,
++                              color: selected ? empPrimary : empMuted,
++                            ),
++                          ],
++                        ),
++                      ),
++                    ),
++                  );
++                },
++              ),
+             ),
+         ],
+       ),

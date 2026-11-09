@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../../appUser.dart';
@@ -1289,7 +1291,10 @@ class _ReceiveSheetState extends State<_ReceiveSheet> {
   Future<void> _pickItem(_ReceiveLineForm line) async {
     final picked = await _showStockSheet<CatalogOption>(
       context,
-      builder: (_) => _ItemPickerSheet(repo: widget.repo),
+      builder: (_) => _ItemPickerSheet(
+        repo: widget.repo,
+        selectedId: line.item?.id,
+      ),
     );
     if (picked != null && mounted) setState(() => line.item = picked);
   }
@@ -1528,7 +1533,8 @@ class _ReceiveSheetState extends State<_ReceiveSheet> {
 
 class _ItemPickerSheet extends StatefulWidget {
   final CashierStockRepository repo;
-  const _ItemPickerSheet({required this.repo});
+  final String? selectedId;
+  const _ItemPickerSheet({required this.repo, this.selectedId});
 
   @override
   State<_ItemPickerSheet> createState() => _ItemPickerSheetState();
@@ -1537,82 +1543,264 @@ class _ItemPickerSheet extends StatefulWidget {
 class _ItemPickerSheetState extends State<_ItemPickerSheet> {
   final _searchCtrl = TextEditingController();
   List<CatalogOption> _results = [];
-  bool _loading = false;
+  bool _loading = true;
+  String? _error;
+  String _query = '';
+  Timer? _debounce;
+  int _requestId = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    // Show a starting list instead of an empty picker; typing narrows it.
+    _fetch('');
+  }
 
   @override
   void dispose() {
+    _debounce?.cancel();
     _searchCtrl.dispose();
     super.dispose();
   }
 
-  Future<void> _search(String q) async {
-    if (q.trim().length < 2) {
-      setState(() => _results = []);
-      return;
+  void _onChanged(String value) {
+    setState(() => _query = value);
+    _debounce?.cancel();
+    _debounce = Timer(const Duration(milliseconds: 250), () => _fetch(value));
+  }
+
+  Future<void> _fetch(String query) async {
+    final request = ++_requestId;
+    if (!_loading || _error != null) {
+      setState(() {
+        _loading = true;
+        _error = null;
+      });
     }
-    setState(() => _loading = true);
     try {
-      final res = await widget.repo.searchCatalog(q);
-      if (!mounted) return;
-      if (_searchCtrl.text != q) return;
+      final res = await widget.repo.searchCatalog(query);
+      if (!mounted || request != _requestId) return;
       setState(() {
         _results = res;
         _loading = false;
       });
-    } catch (_) {
-      if (mounted) setState(() => _loading = false);
+    } catch (e) {
+      if (!mounted || request != _requestId) return;
+      setState(() {
+        _loading = false;
+        _error = e.toString();
+      });
     }
+  }
+
+  void _clear() {
+    _debounce?.cancel();
+    _searchCtrl.clear();
+    setState(() => _query = '');
+    _fetch('');
   }
 
   @override
   Widget build(BuildContext context) {
     return EmpSheetFrame(
       title: 'Pick catalog item',
-      subtitle: 'Type item name to search catalog.',
+      subtitle: 'Search the catalog by product name.',
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           TextField(
             controller: _searchCtrl,
-            onChanged: _search,
+            autofocus: true,
+            textInputAction: TextInputAction.search,
+            onChanged: _onChanged,
+            onSubmitted: (v) {
+              _debounce?.cancel();
+              _fetch(v);
+            },
             style: empSans(14, color: empInk),
             decoration: empField('Type a product name…').copyWith(
               prefixIcon: const Icon(Icons.search, size: 18, color: empMuted),
+              suffixIcon: _query.trim().isEmpty
+                  ? null
+                  : IconButton(
+                      icon: const Icon(Icons.clear, size: 18, color: empMuted),
+                      tooltip: 'Clear search',
+                      onPressed: _clear,
+                    ),
             ),
           ),
           const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  _loading
+                      ? 'Searching catalog…'
+                      : _query.trim().isEmpty
+                          ? 'Showing ${_results.length} catalog items — type to narrow'
+                          : '${_results.length} ${_results.length == 1 ? 'match' : 'matches'} for “${_query.trim()}”',
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: empSans(12, weight: FontWeight.w600, color: empMuted),
+                ),
+              ),
+              if (_query.trim().isNotEmpty)
+                TextButton(
+                  onPressed: _clear,
+                  style: TextButton.styleFrom(
+                    foregroundColor: empPrimary,
+                    minimumSize: const Size(0, 32),
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                  ),
+                  child: const Text('Clear'),
+                ),
+            ],
+          ),
+          const SizedBox(height: 2),
           if (_loading)
             const Padding(
-              padding: EdgeInsets.symmetric(vertical: 20),
+              padding: EdgeInsets.symmetric(vertical: 24),
               child: Center(
                 child: SizedBox(
                   width: 20,
                   height: 20,
-                  child: CircularProgressIndicator(strokeWidth: 2, color: empPrimary),
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: empPrimary,
+                  ),
                 ),
               ),
             )
-          else if (_results.isNotEmpty)
-            for (final c in _results)
-              InkWell(
-                onTap: () => Navigator.of(context).pop(c),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: Text(c.name, style: empSans(13.5, weight: FontWeight.w600, color: empInk)),
-                      ),
-                      const Icon(Icons.chevron_right, size: 17, color: empMuted),
-                    ],
-                  ),
-                ),
-              )
-          else if (_searchCtrl.text.trim().length >= 2)
+          else if (_error != null)
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 16),
-              child: Text('No items match “${_searchCtrl.text.trim()}”.',
-                  textAlign: TextAlign.center, style: empSans(12.5, color: empMuted)),
+              child: Column(
+                children: [
+                  const Icon(
+                    Icons.error_outline,
+                    size: 22,
+                    color: empDanger,
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    'Could not search the catalog.',
+                    textAlign: TextAlign.center,
+                    style: empSans(12.5, weight: FontWeight.w600, color: empInk),
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    _error!,
+                    maxLines: 3,
+                    overflow: TextOverflow.ellipsis,
+                    textAlign: TextAlign.center,
+                    style: empSans(11.5, color: empMuted),
+                  ),
+                  const SizedBox(height: 8),
+                  OutlinedButton(
+                    onPressed: () => _fetch(_query),
+                    style: empOutlineButton(height: 36),
+                    child: const Text('Retry'),
+                  ),
+                ],
+              ),
+            )
+          else if (_results.isEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 20),
+              child: Column(
+                children: [
+                  Text(
+                    _query.trim().isEmpty
+                        ? 'No catalog items available.'
+                        : 'No items match “${_query.trim()}”.',
+                    textAlign: TextAlign.center,
+                    style: empSans(12.5, weight: FontWeight.w600, color: empInk),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    _query.trim().isEmpty
+                        ? 'Ask the admin to add products to the catalog.'
+                        : 'Check the spelling or ask the admin to add this product.',
+                    textAlign: TextAlign.center,
+                    style: empSans(12, color: empMuted),
+                  ),
+                  if (_query.trim().isNotEmpty) ...[
+                    const SizedBox(height: 8),
+                    OutlinedButton(
+                      onPressed: _clear,
+                      style: empOutlineButton(height: 36),
+                      child: const Text('Clear search'),
+                    ),
+                  ],
+                ],
+              ),
+            )
+          else
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxHeight: 320),
+              child: ListView.builder(
+                shrinkWrap: true,
+                itemCount: _results.length,
+                itemBuilder: (context, index) {
+                  final c = _results[index];
+                  final selected = c.id == widget.selectedId;
+                  final meta = [
+                    if (c.category != null && c.category!.isNotEmpty)
+                      c.category!,
+                    if (c.unit != null && c.unit!.isNotEmpty) c.unit!,
+                  ].join(' · ');
+                  return Material(
+                    color: selected ? empPrimaryTint : Colors.transparent,
+                    child: InkWell(
+                      onTap: () => Navigator.of(context).pop(c),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 4,
+                          vertical: 10,
+                        ),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    c.name,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: empSans(
+                                      13.5,
+                                      weight: FontWeight.w600,
+                                      color: empInk,
+                                    ),
+                                  ),
+                                  if (meta.isNotEmpty) ...[
+                                    const SizedBox(height: 1),
+                                    Text(
+                                      meta,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: empSans(11.5, color: empMuted),
+                                    ),
+                                  ],
+                                ],
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Icon(
+                              selected
+                                  ? Icons.check_circle
+                                  : Icons.chevron_right,
+                              size: 18,
+                              color: selected ? empPrimary : empMuted,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  );
+                },
+              ),
             ),
         ],
       ),
