@@ -295,59 +295,42 @@ class EmployeeHomeRepository {
     );
   }
 
-  /// Price + availability lookup. Never returns buying prices.
-  Future<List<LookupItem>> lookup({required String branchId, required String query}) async {
-    final q = query.trim();
-    if (q.length < 2) return [];
-    final items = await _client
-        .from('items')
-        .select('id, name')
-        .ilike('name', '%$q%')
-        .eq('is_active', true)
-        .order('name')
-        .limit(10) as List;
-    if (items.isEmpty) return [];
-    final ids = items.map((r) => r['id'] as String).toList();
-    final stock = await _client
-        .from('inventory')
-        .select('item_id, quantity_available, retail_price, wholesale_price')
-        .eq('branch_id', branchId)
-        .inFilter('item_id', ids)
-        .gt('quantity_available', 0)
-        .limit(200) as List;
-
-    final byItem = <String, List<Map>>{};
-    for (final r in stock) {
-      byItem.putIfAbsent(r['item_id'] as String, () => []).add(r as Map);
-    }
+  /// Loads a compact price + availability index for the branch once. The
+  /// quick lookup then filters this in memory, so typing never waits on the
+  /// network. Uses the pre-aggregated sellable-stock view (one row per item,
+  /// expired batches excluded), so this is a single lightweight request.
+  Future<List<LookupItem>> lookupIndex({required String branchId}) async {
+    const pageSize = 1000;
     final out = <LookupItem>[];
-    for (final it in items) {
-      final id = it['id'] as String;
-      final batches = byItem[id] ?? [];
-      if (batches.isEmpty) continue;
-      var qty = 0.0;
-      var rMin = double.infinity, rMax = 0.0;
-      double? wMin, wMax;
-      for (final b in batches) {
-        qty += ((b['quantity_available'] as num?) ?? 0).toDouble();
-        final r = ((b['retail_price'] as num?) ?? 0).toDouble();
-        if (r < rMin) rMin = r;
-        if (r > rMax) rMax = r;
-        final w = (b['wholesale_price'] as num?)?.toDouble();
-        if (w != null) {
-          wMin = wMin == null ? w : (w < wMin ? w : wMin);
-          wMax = wMax == null ? w : (w > wMax ? w : wMax);
-        }
+    final seen = <String>{};
+    for (var from = 0; from < 10000; from += pageSize) {
+      final page = await _client
+          .from('v_sellable_stock')
+          .select(
+            'item_id, item_name, sellable_quantity, retail_price, wholesale_price',
+          )
+          .eq('branch_id', branchId)
+          .order('item_name', ascending: true)
+          .order('item_id', ascending: true)
+          .range(from, from + pageSize - 1) as List;
+      for (final r in page) {
+        final itemId = r['item_id'] as String;
+        if (!seen.add(itemId)) continue;
+        final retail = ((r['retail_price'] as num?) ?? 0).toDouble();
+        final wholesale = (r['wholesale_price'] as num?)?.toDouble();
+        out.add(
+          LookupItem(
+            itemId: itemId,
+            name: (r['item_name'] as String?) ?? '—',
+            retailMin: retail,
+            retailMax: retail,
+            wholesaleMin: wholesale,
+            wholesaleMax: wholesale,
+            qty: ((r['sellable_quantity'] as num?) ?? 0).toDouble(),
+          ),
+        );
       }
-      out.add(LookupItem(
-        itemId: id,
-        name: it['name'] as String,
-        retailMin: rMin.isFinite ? rMin : 0,
-        retailMax: rMax,
-        wholesaleMin: wMin,
-        wholesaleMax: wMax,
-        qty: qty,
-      ));
+      if (page.length < pageSize) break;
     }
     return out;
   }

@@ -1,0 +1,298 @@
+diff --git a/lib/screens/employer/employeeHome.dart b/lib/screens/employer/employeeHome.dart
+index b34ec91..3bac91f 100644
+--- a/lib/screens/employer/employeeHome.dart
++++ b/lib/screens/employer/employeeHome.dart
+@@ -113,6 +113,14 @@ class _EmployeeHomeScreenState extends State<EmployeeHomeScreen> {
+   List<LookupItem> _lookupResults = [];
+   bool _lookupLoading = false;
+ 
++  /// Branch price/availability index, loaded once and filtered locally so
++  /// typing shows results instantly instead of waiting for a network query.
++  List<LookupItem>? _lookupIndex;
++  bool _lookupIndexLoading = false;
++  String? _lookupIndexError;
++
++  static const int _lookupResultLimit = 20;
++
+   bool get _isStock => widget.user.role == 'stock_controller';
+   bool get _isManager => widget.user.role == 'manager';
+ 
+@@ -120,6 +128,11 @@ class _EmployeeHomeScreenState extends State<EmployeeHomeScreen> {
+   void initState() {
+     super.initState();
+     _load();
++    // Start loading the lookup index in the background right away so the
++    // first keystroke already has data to search.
++    WidgetsBinding.instance.addPostFrameCallback((_) {
++      if (mounted) _loadLookupIndex();
++    });
+   }
+ 
+   @override
+@@ -132,7 +145,12 @@ class _EmployeeHomeScreenState extends State<EmployeeHomeScreen> {
+   void didChangeDependencies() {
+     super.didChangeDependencies();
+     final selected = EmployeeShellScope.of(context)?.selectedIndex == 0;
+-    if (selected && !_wasSelected && _loadedOnce) _load(silent: true);
++    if (selected && !_wasSelected && _loadedOnce) {
++      _load(silent: true);
++      // Keep availability/prices fresh after a sale without making the user
++      // wait: the existing index stays usable while this refreshes.
++      _loadLookupIndex();
++    }
+     _wasSelected = selected;
+   }
+ 
+@@ -172,27 +190,71 @@ class _EmployeeHomeScreenState extends State<EmployeeHomeScreen> {
+     }
+   }
+ 
+-  Future<void> _runLookup(String q) async {
++  /// Loads (or silently refreshes) the branch lookup index. Runs separately
++  /// from the home bundle so a slow lookup never blocks the dashboard.
++  Future<void> _loadLookupIndex() async {
++    final branchId = widget.user.branchId;
++    if (branchId == null || _lookupIndexLoading) return;
+     setState(() {
+-      _lookupQuery = q;
+-      _lookupLoading = q.trim().length >= 2;
+-      if (q.trim().length < 2) _lookupResults = [];
++      _lookupIndexLoading = true;
++      _lookupIndexError = null;
++      if (_lookupIndex == null && _lookupQuery.trim().length >= 2) {
++        _lookupLoading = true;
++      }
+     });
+-    if (q.trim().length < 2) return;
+-    final branchId = widget.user.branchId;
+-    if (branchId == null) return;
+     try {
+-      final res = await _repo.lookup(branchId: branchId, query: q);
++      final index = await _repo.lookupIndex(branchId: branchId);
+       if (!mounted) return;
+-      if (_lookupCtrl.text != q) return;
+       setState(() {
+-        _lookupResults = res;
++        _lookupIndex = index;
++        _lookupIndexLoading = false;
++        _lookupIndexError = null;
++        _lookupResults = _matchesFor(_lookupQuery);
+         _lookupLoading = false;
+       });
+-    } catch (_) {
++    } catch (e) {
+       if (!mounted) return;
+-      if (_lookupCtrl.text != q) return;
+-      setState(() => _lookupLoading = false);
++      setState(() {
++        _lookupIndexLoading = false;
++        // Keep serving the previous index if a background refresh fails.
++        if (_lookupIndex == null) _lookupIndexError = e.toString();
++        _lookupLoading = false;
++      });
++    }
++  }
++
++  List<LookupItem> _matchesFor(String query) {
++    final index = _lookupIndex;
++    final term = query.trim().toLowerCase();
++    if (index == null || term.length < 2) return const [];
++    final out = <LookupItem>[];
++    for (final item in index) {
++      if (item.name.toLowerCase().contains(term)) {
++        out.add(item);
++        if (out.length >= _lookupResultLimit) break;
++      }
++    }
++    return out;
++  }
++
++  /// Filters the preloaded index in memory — no network call per keystroke.
++  void _runLookup(String q) {
++    setState(() {
++      _lookupQuery = q;
++      if (_lookupIndex != null) {
++        _lookupResults = _matchesFor(q);
++        _lookupLoading = false;
++      } else {
++        _lookupResults = const [];
++        _lookupLoading = _lookupIndexLoading;
++      }
++    });
++    final term = q.trim();
++    if (term.length >= 2 &&
++        _lookupIndex == null &&
++        !_lookupIndexLoading &&
++        _lookupIndexError == null) {
++      _loadLookupIndex();
+     }
+   }
+ 
+@@ -384,6 +446,8 @@ class _EmployeeHomeScreenState extends State<EmployeeHomeScreen> {
+       query: _lookupQuery,
+       results: _lookupResults,
+       onChanged: _runLookup,
++      error: _lookupIndexError,
++      onRetry: _loadLookupIndex,
+     );
+     final recent = _isStock
+         ? _MovementsBlock(moves: d.recentMoves)
+@@ -764,12 +828,16 @@ class _LookupBlock extends StatelessWidget {
+   final String query;
+   final List<LookupItem> results;
+   final ValueChanged<String> onChanged;
++  final String? error;
++  final VoidCallback? onRetry;
+   const _LookupBlock({
+     required this.controller,
+     required this.loading,
+     required this.query,
+     required this.results,
+     required this.onChanged,
++    this.error,
++    this.onRetry,
+   });
+ 
+   String _price(double min, double max) =>
+@@ -818,7 +886,42 @@ class _LookupBlock extends StatelessWidget {
+           ),
+         ] else if (q.length >= 2) ...[
+           const SizedBox(height: 8),
+-          if (results.isEmpty)
++          if (error != null)
++            Container(
++              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
++              decoration: BoxDecoration(
++                color: empDangerTint,
++                border: Border.all(color: empDanger),
++                borderRadius: BorderRadius.circular(4),
++              ),
++              child: Row(
++                children: [
++                  const Icon(
++                    Icons.error_outline,
++                    size: 17,
++                    color: empDanger,
++                  ),
++                  const SizedBox(width: 8),
++                  Expanded(
++                    child: Text(
++                      'Quick lookup could not load. Check your connection and try again.',
++                      style: empSans(12, color: empInk),
++                    ),
++                  ),
++                  if (onRetry != null)
++                    TextButton(
++                      onPressed: onRetry,
++                      style: TextButton.styleFrom(
++                        foregroundColor: empPrimary,
++                        minimumSize: const Size(0, 32),
++                        padding: const EdgeInsets.symmetric(horizontal: 8),
++                      ),
++                      child: const Text('Retry'),
++                    ),
++                ],
++              ),
++            )
++          else if (results.isEmpty)
+             Padding(
+               padding: const EdgeInsets.symmetric(vertical: 8),
+               child: Text(
+diff --git a/lib/screens/employer/employeeHomeRepo.dart b/lib/screens/employer/employeeHomeRepo.dart
+index d816a23..0a38c48 100644
+--- a/lib/screens/employer/employeeHomeRepo.dart
++++ b/lib/screens/employer/employeeHomeRepo.dart
+@@ -295,59 +295,42 @@ class EmployeeHomeRepository {
+     );
+   }
+ 
+-  /// Price + availability lookup. Never returns buying prices.
+-  Future<List<LookupItem>> lookup({required String branchId, required String query}) async {
+-    final q = query.trim();
+-    if (q.length < 2) return [];
+-    final items = await _client
+-        .from('items')
+-        .select('id, name')
+-        .ilike('name', '%$q%')
+-        .eq('is_active', true)
+-        .order('name')
+-        .limit(10) as List;
+-    if (items.isEmpty) return [];
+-    final ids = items.map((r) => r['id'] as String).toList();
+-    final stock = await _client
+-        .from('inventory')
+-        .select('item_id, quantity_available, retail_price, wholesale_price')
+-        .eq('branch_id', branchId)
+-        .inFilter('item_id', ids)
+-        .gt('quantity_available', 0)
+-        .limit(200) as List;
+-
+-    final byItem = <String, List<Map>>{};
+-    for (final r in stock) {
+-      byItem.putIfAbsent(r['item_id'] as String, () => []).add(r as Map);
+-    }
++  /// Loads a compact price + availability index for the branch once. The
++  /// quick lookup then filters this in memory, so typing never waits on the
++  /// network. Uses the pre-aggregated sellable-stock view (one row per item,
++  /// expired batches excluded), so this is a single lightweight request.
++  Future<List<LookupItem>> lookupIndex({required String branchId}) async {
++    const pageSize = 1000;
+     final out = <LookupItem>[];
+-    for (final it in items) {
+-      final id = it['id'] as String;
+-      final batches = byItem[id] ?? [];
+-      if (batches.isEmpty) continue;
+-      var qty = 0.0;
+-      var rMin = double.infinity, rMax = 0.0;
+-      double? wMin, wMax;
+-      for (final b in batches) {
+-        qty += ((b['quantity_available'] as num?) ?? 0).toDouble();
+-        final r = ((b['retail_price'] as num?) ?? 0).toDouble();
+-        if (r < rMin) rMin = r;
+-        if (r > rMax) rMax = r;
+-        final w = (b['wholesale_price'] as num?)?.toDouble();
+-        if (w != null) {
+-          wMin = wMin == null ? w : (w < wMin ? w : wMin);
+-          wMax = wMax == null ? w : (w > wMax ? w : wMax);
+-        }
++    final seen = <String>{};
++    for (var from = 0; from < 10000; from += pageSize) {
++      final page = await _client
++          .from('v_sellable_stock')
++          .select(
++            'item_id, item_name, sellable_quantity, retail_price, wholesale_price',
++          )
++          .eq('branch_id', branchId)
++          .order('item_name', ascending: true)
++          .order('item_id', ascending: true)
++          .range(from, from + pageSize - 1) as List;
++      for (final r in page) {
++        final itemId = r['item_id'] as String;
++        if (!seen.add(itemId)) continue;
++        final retail = ((r['retail_price'] as num?) ?? 0).toDouble();
++        final wholesale = (r['wholesale_price'] as num?)?.toDouble();
++        out.add(
++          LookupItem(
++            itemId: itemId,
++            name: (r['item_name'] as String?) ?? '—',
++            retailMin: retail,
++            retailMax: retail,
++            wholesaleMin: wholesale,
++            wholesaleMax: wholesale,
++            qty: ((r['sellable_quantity'] as num?) ?? 0).toDouble(),
++          ),
++        );
+       }
+-      out.add(LookupItem(
+-        itemId: id,
+-        name: it['name'] as String,
+-        retailMin: rMin.isFinite ? rMin : 0,
+-        retailMax: rMax,
+-        wholesaleMin: wMin,
+-        wholesaleMax: wMax,
+-        qty: qty,
+-      ));
++      if (page.length < pageSize) break;
+     }
+     return out;
+   }

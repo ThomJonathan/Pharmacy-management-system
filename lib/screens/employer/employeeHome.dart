@@ -113,6 +113,14 @@ class _EmployeeHomeScreenState extends State<EmployeeHomeScreen> {
   List<LookupItem> _lookupResults = [];
   bool _lookupLoading = false;
 
+  /// Branch price/availability index, loaded once and filtered locally so
+  /// typing shows results instantly instead of waiting for a network query.
+  List<LookupItem>? _lookupIndex;
+  bool _lookupIndexLoading = false;
+  String? _lookupIndexError;
+
+  static const int _lookupResultLimit = 20;
+
   bool get _isStock => widget.user.role == 'stock_controller';
   bool get _isManager => widget.user.role == 'manager';
 
@@ -120,6 +128,11 @@ class _EmployeeHomeScreenState extends State<EmployeeHomeScreen> {
   void initState() {
     super.initState();
     _load();
+    // Start loading the lookup index in the background right away so the
+    // first keystroke already has data to search.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _loadLookupIndex();
+    });
   }
 
   @override
@@ -132,7 +145,12 @@ class _EmployeeHomeScreenState extends State<EmployeeHomeScreen> {
   void didChangeDependencies() {
     super.didChangeDependencies();
     final selected = EmployeeShellScope.of(context)?.selectedIndex == 0;
-    if (selected && !_wasSelected && _loadedOnce) _load(silent: true);
+    if (selected && !_wasSelected && _loadedOnce) {
+      _load(silent: true);
+      // Keep availability/prices fresh after a sale without making the user
+      // wait: the existing index stays usable while this refreshes.
+      _loadLookupIndex();
+    }
     _wasSelected = selected;
   }
 
@@ -172,27 +190,71 @@ class _EmployeeHomeScreenState extends State<EmployeeHomeScreen> {
     }
   }
 
-  Future<void> _runLookup(String q) async {
-    setState(() {
-      _lookupQuery = q;
-      _lookupLoading = q.trim().length >= 2;
-      if (q.trim().length < 2) _lookupResults = [];
-    });
-    if (q.trim().length < 2) return;
+  /// Loads (or silently refreshes) the branch lookup index. Runs separately
+  /// from the home bundle so a slow lookup never blocks the dashboard.
+  Future<void> _loadLookupIndex() async {
     final branchId = widget.user.branchId;
-    if (branchId == null) return;
+    if (branchId == null || _lookupIndexLoading) return;
+    setState(() {
+      _lookupIndexLoading = true;
+      _lookupIndexError = null;
+      if (_lookupIndex == null && _lookupQuery.trim().length >= 2) {
+        _lookupLoading = true;
+      }
+    });
     try {
-      final res = await _repo.lookup(branchId: branchId, query: q);
+      final index = await _repo.lookupIndex(branchId: branchId);
       if (!mounted) return;
-      if (_lookupCtrl.text != q) return;
       setState(() {
-        _lookupResults = res;
+        _lookupIndex = index;
+        _lookupIndexLoading = false;
+        _lookupIndexError = null;
+        _lookupResults = _matchesFor(_lookupQuery);
         _lookupLoading = false;
       });
-    } catch (_) {
+    } catch (e) {
       if (!mounted) return;
-      if (_lookupCtrl.text != q) return;
-      setState(() => _lookupLoading = false);
+      setState(() {
+        _lookupIndexLoading = false;
+        // Keep serving the previous index if a background refresh fails.
+        if (_lookupIndex == null) _lookupIndexError = e.toString();
+        _lookupLoading = false;
+      });
+    }
+  }
+
+  List<LookupItem> _matchesFor(String query) {
+    final index = _lookupIndex;
+    final term = query.trim().toLowerCase();
+    if (index == null || term.length < 2) return const [];
+    final out = <LookupItem>[];
+    for (final item in index) {
+      if (item.name.toLowerCase().contains(term)) {
+        out.add(item);
+        if (out.length >= _lookupResultLimit) break;
+      }
+    }
+    return out;
+  }
+
+  /// Filters the preloaded index in memory — no network call per keystroke.
+  void _runLookup(String q) {
+    setState(() {
+      _lookupQuery = q;
+      if (_lookupIndex != null) {
+        _lookupResults = _matchesFor(q);
+        _lookupLoading = false;
+      } else {
+        _lookupResults = const [];
+        _lookupLoading = _lookupIndexLoading;
+      }
+    });
+    final term = q.trim();
+    if (term.length >= 2 &&
+        _lookupIndex == null &&
+        !_lookupIndexLoading &&
+        _lookupIndexError == null) {
+      _loadLookupIndex();
     }
   }
 
@@ -384,6 +446,8 @@ class _EmployeeHomeScreenState extends State<EmployeeHomeScreen> {
       query: _lookupQuery,
       results: _lookupResults,
       onChanged: _runLookup,
+      error: _lookupIndexError,
+      onRetry: _loadLookupIndex,
     );
     final recent = _isStock
         ? _MovementsBlock(moves: d.recentMoves)
@@ -764,12 +828,16 @@ class _LookupBlock extends StatelessWidget {
   final String query;
   final List<LookupItem> results;
   final ValueChanged<String> onChanged;
+  final String? error;
+  final VoidCallback? onRetry;
   const _LookupBlock({
     required this.controller,
     required this.loading,
     required this.query,
     required this.results,
     required this.onChanged,
+    this.error,
+    this.onRetry,
   });
 
   String _price(double min, double max) =>
@@ -818,7 +886,42 @@ class _LookupBlock extends StatelessWidget {
           ),
         ] else if (q.length >= 2) ...[
           const SizedBox(height: 8),
-          if (results.isEmpty)
+          if (error != null)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              decoration: BoxDecoration(
+                color: empDangerTint,
+                border: Border.all(color: empDanger),
+                borderRadius: BorderRadius.circular(4),
+              ),
+              child: Row(
+                children: [
+                  const Icon(
+                    Icons.error_outline,
+                    size: 17,
+                    color: empDanger,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Quick lookup could not load. Check your connection and try again.',
+                      style: empSans(12, color: empInk),
+                    ),
+                  ),
+                  if (onRetry != null)
+                    TextButton(
+                      onPressed: onRetry,
+                      style: TextButton.styleFrom(
+                        foregroundColor: empPrimary,
+                        minimumSize: const Size(0, 32),
+                        padding: const EdgeInsets.symmetric(horizontal: 8),
+                      ),
+                      child: const Text('Retry'),
+                    ),
+                ],
+              ),
+            )
+          else if (results.isEmpty)
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 8),
               child: Text(
