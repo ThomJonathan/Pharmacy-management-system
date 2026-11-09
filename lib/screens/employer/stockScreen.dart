@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../appUser.dart';
+import '../../core/quantityUnit.dart';
 import '../../widgets/employeeShell.dart';
 import 'employeeUi.dart';
 import 'stockRepo.dart';
@@ -23,12 +24,24 @@ class StockScreen extends StatefulWidget {
 class _StockScreenState extends State<StockScreen> {
   final _repo = CashierStockRepository();
   final _searchCtrl = TextEditingController();
+  final _catalogSearchCtrl = TextEditingController();
+  final _scrollController = ScrollController();
+
+  bool _showBackToTop = false;
+  int _tab = 0; // 0 = Branch Stock, 1 = Catalog
 
   bool _loading = true;
   String? _error;
   List<BranchStockRow> _rows = [];
   String _query = '';
   String _chip = 'all'; // all | low | expiring
+
+  List<EmployeeCatalogItem> _catalog = [];
+  String? _catalogError;
+  String _catalogSearch = '';
+  String? _catalogCategory;
+  static const int _catalogPageSize = 80;
+  int _catalogVisibleLimit = _catalogPageSize;
 
   bool _canReceive = false;
   OwnAccess _access = const OwnAccess(state: OwnAccessState.none);
@@ -47,12 +60,33 @@ class _StockScreenState extends State<StockScreen> {
   @override
   void initState() {
     super.initState();
+    _scrollController.addListener(_onScroll);
     _load();
+  }
+
+  void _onScroll() {
+    final show = _scrollController.hasClients && _scrollController.offset > 250;
+    if (show != _showBackToTop) {
+      setState(() => _showBackToTop = show);
+    }
+  }
+
+  void _scrollToTop() {
+    if (_scrollController.hasClients) {
+      _scrollController.animateTo(
+        0,
+        duration: const Duration(milliseconds: 350),
+        curve: Curves.easeOutCubic,
+      );
+    }
   }
 
   @override
   void dispose() {
+    _scrollController.removeListener(_onScroll);
+    _scrollController.dispose();
     _searchCtrl.dispose();
+    _catalogSearchCtrl.dispose();
     super.dispose();
   }
 
@@ -92,6 +126,17 @@ class _StockScreenState extends State<StockScreen> {
         _repo.myCatalogStatus(),
         _repo.fetchBranchBusinessTypes(bid),
       ]);
+      // Catalog is loaded separately: a catalog-only permission/schema problem
+      // must never blank out the branch stock tab.
+      var catalog = _catalog;
+      String? catalogError;
+      try {
+        catalog = await _repo
+            .fetchCatalog()
+            .timeout(const Duration(seconds: 20));
+      } catch (e) {
+        catalogError = e.toString();
+      }
       if (!mounted) return;
       setState(() {
         _rows = results[0] as List<BranchStockRow>;
@@ -100,6 +145,8 @@ class _StockScreenState extends State<StockScreen> {
         _canAddCatalog = results[3] as bool;
         _catalogAccess = results[4] as OwnAccess;
         _branchTypes = results[5] as List<BusinessTypeOption>;
+        _catalog = catalog;
+        _catalogError = catalogError;
         _loading = false;
         _error = null;
         _loadedOnce = true;
@@ -123,6 +170,42 @@ class _StockScreenState extends State<StockScreen> {
       }
       return true;
     }).toList();
+  }
+
+  List<EmployeeCatalogItem> get _visibleCatalog {
+    final q = _catalogSearch.trim().toLowerCase();
+    return _catalog.where((c) {
+      if (_catalogCategory != null && c.category != _catalogCategory) {
+        return false;
+      }
+      if (q.isEmpty) return true;
+      return c.name.toLowerCase().contains(q) ||
+          c.category.toLowerCase().contains(q) ||
+          c.businessTypeName.toLowerCase().contains(q);
+    }).toList();
+  }
+
+  void _updateCatalogSearch(String value) {
+    setState(() {
+      _catalogSearch = value;
+      _catalogVisibleLimit = _catalogPageSize;
+    });
+  }
+
+  void _updateCatalogCategory(String? value) {
+    setState(() {
+      _catalogCategory = value;
+      _catalogVisibleLimit = _catalogPageSize;
+    });
+  }
+
+  void _clearCatalogFilters() {
+    _catalogSearchCtrl.clear();
+    setState(() {
+      _catalogSearch = '';
+      _catalogCategory = null;
+      _catalogVisibleLimit = _catalogPageSize;
+    });
   }
 
   Future<void> _requestAccess() async {
@@ -257,6 +340,22 @@ class _StockScreenState extends State<StockScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: empBg,
+      floatingActionButton: _showBackToTop
+          ? FloatingActionButton.extended(
+              onPressed: _scrollToTop,
+              backgroundColor: empPrimary,
+              foregroundColor: Colors.white,
+              elevation: 4,
+              icon: const Icon(Icons.arrow_upward_rounded, size: 18),
+              label: const Text(
+                'Back to top',
+                style: TextStyle(
+                  fontWeight: FontWeight.w600,
+                  fontSize: 13,
+                ),
+              ),
+            )
+          : null,
       body: SafeArea(
         child: RefreshIndicator(
           color: empPrimary,
@@ -265,12 +364,13 @@ class _StockScreenState extends State<StockScreen> {
             builder: (context, c) {
               final wide = c.maxWidth >= empWideBreakpoint;
               return SingleChildScrollView(
+                controller: _scrollController,
                 physics: const AlwaysScrollableScrollPhysics(),
                 padding: EdgeInsets.fromLTRB(
                   wide ? 32 : 18,
                   wide ? 28 : 14,
                   wide ? 32 : 18,
-                  32,
+                  _showBackToTop ? 96 : 32,
                 ),
                 child: Center(
                   child: ConstrainedBox(
@@ -306,55 +406,189 @@ class _StockScreenState extends State<StockScreen> {
       );
     }
 
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _tabSwitcher(wide),
+        const SizedBox(height: 16),
+        if (_tab == 0) _stockView(wide) else _catalogView(wide),
+      ],
+    );
+  }
+
+  Widget _tabSwitcher(bool wide) {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        border: Border.all(color: empBorder),
+        borderRadius: BorderRadius.circular(6),
+      ),
+      padding: const EdgeInsets.all(4),
+      child: Row(
+        children: [
+          Expanded(
+            child: InkWell(
+              onTap: () => setState(() => _tab = 0),
+              borderRadius: BorderRadius.circular(4),
+              child: Container(
+                padding: const EdgeInsets.symmetric(vertical: 9),
+                decoration: BoxDecoration(
+                  color: _tab == 0 ? empPrimary : Colors.transparent,
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                alignment: Alignment.center,
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      Icons.inventory_2_outlined,
+                      size: 16,
+                      color: _tab == 0 ? Colors.white : empMuted,
+                    ),
+                    const SizedBox(width: 6),
+                    Flexible(
+                      child: Text(
+                        wide
+                            ? 'Branch Stock (${_rows.length})'
+                            : 'Stock (${_rows.length})',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: empSans(
+                          13,
+                          weight: FontWeight.w600,
+                          color: _tab == 0 ? Colors.white : empMuted,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 4),
+          Expanded(
+            child: InkWell(
+              onTap: () => setState(() => _tab = 1),
+              borderRadius: BorderRadius.circular(4),
+              child: Container(
+                padding: const EdgeInsets.symmetric(vertical: 9),
+                decoration: BoxDecoration(
+                  color: _tab == 1 ? empPrimary : Colors.transparent,
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                alignment: Alignment.center,
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      Icons.category_outlined,
+                      size: 16,
+                      color: _tab == 1 ? Colors.white : empMuted,
+                    ),
+                    const SizedBox(width: 6),
+                    Flexible(
+                      child: Text(
+                        'Catalog (${_catalog.length})',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: empSans(
+                          13,
+                          weight: FontWeight.w600,
+                          color: _tab == 1 ? Colors.white : empMuted,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Page heading that keeps its action beside the title on desktop and
+  /// moves it below the title on phones, so long button labels never squeeze
+  /// the heading or overflow.
+  Widget _pageHeading({
+    required String title,
+    required String subtitle,
+    required bool wide,
+    Widget? action,
+  }) {
+    final heading = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          title,
+          style: empSans(22, weight: FontWeight.w700, color: empInk),
+        ),
+        const SizedBox(height: 3),
+        Text(subtitle, style: empSans(12.5, color: empMuted)),
+      ],
+    );
+    if (action == null) return heading;
+    if (wide) {
+      return Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(child: heading),
+          const SizedBox(width: 12),
+          action,
+        ],
+      );
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        heading,
+        const SizedBox(height: 10),
+        Align(alignment: Alignment.centerLeft, child: action),
+      ],
+    );
+  }
+
+  Widget _stockView(bool wide) {
     final lowCount = _rows.where((r) => r.low).length;
     final expCount = _rows.where((r) => r.expiring).length;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Row(
-          children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('Branch Stock', style: empSans(22, weight: FontWeight.w700, color: empInk)),
-                  const SizedBox(height: 3),
-                  Text(
-                    '${widget.branchName} · ${_rows.length} ${_rows.length == 1 ? 'item' : 'items'} in inventory',
-                    style: empSans(12.5, color: empMuted),
-                  ),
-                ],
-              ),
-            ),
-            if (_canReceive)
-              FilledButton.icon(
-                onPressed: _receive,
-                style: empPrimaryButton(height: 38),
-                icon: const Icon(Icons.add_box_outlined, size: 17),
-                label: const Text('Receive stock'),
-              )
-            else if (_access.state != OwnAccessState.pending)
-              OutlinedButton.icon(
-                onPressed: _requestAccess,
-                style: empOutlineButton(height: 38),
-                icon: const Icon(Icons.lock_open_outlined, size: 16),
-                label: const Text('Request receive access'),
-              ),
-          ],
+        _pageHeading(
+          title: 'Branch Stock',
+          subtitle:
+              '${widget.branchName} · ${_rows.length} ${_rows.length == 1 ? 'item' : 'items'} in inventory',
+          wide: wide,
+          action: _canReceive
+              ? FilledButton.icon(
+                  onPressed: _receive,
+                  style: empPrimaryButton(height: 38),
+                  icon: const Icon(Icons.add_box_outlined, size: 17),
+                  label: const Text('Receive stock'),
+                )
+              : _access.state != OwnAccessState.pending
+                  ? OutlinedButton.icon(
+                      onPressed: _requestAccess,
+                      style: empOutlineButton(height: 38),
+                      icon: const Icon(Icons.lock_open_outlined, size: 16),
+                      label: const Text('Request receive access'),
+                    )
+                  : null,
         ),
         const SizedBox(height: 10),
-        Row(
+        Wrap(
+          spacing: 10,
+          runSpacing: 8,
+          crossAxisAlignment: WrapCrossAlignment.center,
           children: [
-            Expanded(
-              child: Text(
-                _branchTypes.isEmpty
-                    ? 'Catalog: this branch has no business type set — ask the admin.'
-                    : 'Catalog: ${_branchTypes.map((t) => t.name).join(' · ')}',
-                style: empSans(12, color: empMuted),
-              ),
+            Text(
+              _branchTypes.isEmpty
+                  ? 'Catalog: this branch has no business type set — ask the admin.'
+                  : 'Catalog: ${_branchTypes.map((t) => t.name).join(' · ')}',
+              style: empSans(12, color: empMuted),
             ),
-            const SizedBox(width: 10),
             if (_canAddCatalog)
               OutlinedButton.icon(
                 onPressed: _addCatalogItem,
@@ -384,6 +618,16 @@ class _StockScreenState extends State<StockScreen> {
           style: empSans(14, color: empInk),
           decoration: empField('Search stock by product or item name…').copyWith(
             prefixIcon: const Icon(Icons.search, size: 18, color: empMuted),
+            suffixIcon: _query.isNotEmpty
+                ? IconButton(
+                    icon: const Icon(Icons.clear, size: 18, color: empMuted),
+                    onPressed: () {
+                      _searchCtrl.clear();
+                      setState(() => _query = '');
+                      _load(silent: true);
+                    },
+                  )
+                : null,
           ),
         ),
         const SizedBox(height: 12),
@@ -413,6 +657,285 @@ class _StockScreenState extends State<StockScreen> {
         ),
         const SizedBox(height: 16),
         _list(wide),
+      ],
+    );
+  }
+
+  Widget _catalogView(bool wide) {
+    final catalogAll = _visibleCatalog;
+    final catalogList = catalogAll.take(_catalogVisibleLimit).toList();
+    final categories = <String>{
+      for (final it in _catalog)
+        if (it.category.isNotEmpty) it.category,
+    }.toList()
+      ..sort();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _pageHeading(
+          title: 'Catalog Products',
+          subtitle: (_catalogSearch.trim().isNotEmpty ||
+                  _catalogCategory != null)
+              ? '${catalogAll.length} of ${_catalog.length} products match'
+              : '${_catalog.length} ${_catalog.length == 1 ? 'product' : 'products'} available in system',
+          wide: wide,
+          action: _canAddCatalog
+              ? FilledButton.icon(
+                  onPressed: _addCatalogItem,
+                  style: empPrimaryButton(height: 38),
+                  icon: const Icon(Icons.playlist_add_outlined, size: 17),
+                  label: const Text('Add product'),
+                )
+              : _catalogAccess.state != OwnAccessState.pending
+                  ? OutlinedButton.icon(
+                      onPressed: _requestCatalogAccess,
+                      style: empOutlineButton(height: 38),
+                      icon: const Icon(Icons.library_add_outlined, size: 16),
+                      label: const Text('Request access to add'),
+                    )
+                  : null,
+        ),
+        const SizedBox(height: 16),
+        _catalogBanner(),
+        if (_catalogError != null) ...[
+          Container(
+            margin: const EdgeInsets.only(bottom: 12),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              border: Border.all(color: empDanger),
+              borderRadius: BorderRadius.circular(4),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.error_outline, size: 18, color: empDanger),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    'Could not load the catalog. ${_catalogError!}',
+                    maxLines: 3,
+                    overflow: TextOverflow.ellipsis,
+                    style: empSans(12, color: empMuted),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                TextButton(
+                  onPressed: () => _load(silent: true),
+                  style: TextButton.styleFrom(foregroundColor: empPrimary),
+                  child: const Text('Retry'),
+                ),
+              ],
+            ),
+          ),
+        ],
+        Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            border: Border.all(color: empBorder),
+            borderRadius: BorderRadius.circular(6),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              LayoutBuilder(
+                builder: (context, box) {
+                  final compact = box.maxWidth < 520;
+                  final searchField = TextField(
+                    controller: _catalogSearchCtrl,
+                    onChanged: _updateCatalogSearch,
+                    onSubmitted: _updateCatalogSearch,
+                    textInputAction: TextInputAction.search,
+                    style: empSans(14, color: empInk),
+                    decoration:
+                        empField('Search catalog items by name or category…')
+                            .copyWith(
+                      prefixIcon: const Icon(
+                        Icons.search,
+                        size: 18,
+                        color: empMuted,
+                      ),
+                      suffixIcon: _catalogSearch.isNotEmpty
+                          ? IconButton(
+                              icon: const Icon(
+                                Icons.clear,
+                                size: 18,
+                                color: empMuted,
+                              ),
+                              tooltip: 'Clear search',
+                              onPressed: () {
+                                _catalogSearchCtrl.clear();
+                                _updateCatalogSearch('');
+                              },
+                            )
+                          : null,
+                    ),
+                  );
+                  final searchButton = FilledButton.icon(
+                    onPressed: () {
+                      _updateCatalogSearch(
+                        _catalogSearchCtrl.text.trim(),
+                      );
+                    },
+                    style: empPrimaryButton(height: 42),
+                    icon: const Icon(Icons.search, size: 18),
+                    label: const Text('Search'),
+                  );
+                  if (compact) {
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        searchField,
+                        const SizedBox(height: 8),
+                        SizedBox(width: double.infinity, child: searchButton),
+                      ],
+                    );
+                  }
+                  return Row(
+                    children: [
+                      Expanded(child: searchField),
+                      const SizedBox(width: 8),
+                      searchButton,
+                    ],
+                  );
+                },
+              ),
+              if (categories.isNotEmpty) ...[
+                const SizedBox(height: 10),
+                SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    children: [
+                      EmpFilterPill(
+                        label: 'All (${_catalog.length})',
+                        selected: _catalogCategory == null,
+                        onTap: () => _updateCatalogCategory(null),
+                      ),
+                      for (final cat in categories) ...[
+                        const SizedBox(width: 8),
+                        EmpFilterPill(
+                          label: cat,
+                          selected: _catalogCategory == cat,
+                          onTap: () => _updateCatalogCategory(
+                            (_catalogCategory == cat) ? null : cat,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+        const SizedBox(height: 14),
+        if (catalogList.isEmpty)
+          EmpEmpty(
+            icon: Icons.category_outlined,
+            title: 'No products found',
+            message: _catalogSearch.trim().isNotEmpty
+                ? 'No catalog items match “${_catalogSearch.trim()}”${_catalogCategory != null ? ' in $_catalogCategory' : ''}.'
+                : _catalogCategory != null
+                    ? 'No products in $_catalogCategory.'
+                    : 'No catalog products available.',
+            action: (_catalogSearch.trim().isNotEmpty ||
+                    _catalogCategory != null)
+                ? OutlinedButton(
+                    onPressed: _clearCatalogFilters,
+                    style: empOutlineButton(height: 36),
+                    child: const Text('Clear filters'),
+                  )
+                : null,
+          )
+        else
+          Container(
+            decoration: BoxDecoration(
+              color: Colors.white,
+              border: Border.all(color: empBorder),
+              borderRadius: BorderRadius.circular(4),
+            ),
+            child: Column(
+              children: List.generate(catalogList.length, (i) {
+                final it = catalogList[i];
+                final isLast = i == catalogList.length - 1;
+                return Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  decoration: BoxDecoration(
+                    border: isLast ? null : const Border(bottom: BorderSide(color: empBorder)),
+                  ),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Flexible(
+                                  child: Text(
+                                    it.name,
+                                    style: empSans(13.5, weight: FontWeight.w600, color: empInk),
+                                  ),
+                                ),
+                                if (it.requiresPrescription) ...[
+                                  const SizedBox(width: 6),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                    decoration: BoxDecoration(
+                                      color: empPrimary.withValues(alpha: 0.12),
+                                      borderRadius: BorderRadius.circular(3),
+                                    ),
+                                    child: Text(
+                                      'Rx',
+                                      style: empSans(10.5, weight: FontWeight.w700, color: empPrimary),
+                                    ),
+                                  ),
+                                ],
+                              ],
+                            ),
+                            const SizedBox(height: 3),
+                            Text(
+                              '${it.businessTypeName} · ${it.category} · Base unit: ${it.unit}${it.quantityStep != 1 ? ' · step ${fmtQty(it.quantityStep)}' : ''}${it.units.isNotEmpty ? ' · extra: ${it.units.map((u) => '${u.name} (${fmtQty(u.factor)})').join(', ')}' : ''}',
+                              style: empSans(11.5, color: empMuted),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          Text(
+                            'Reorder at',
+                            style: empSans(10.5, color: empMuted),
+                          ),
+                          const SizedBox(height: 1),
+                          Text(
+                            '${empQty(it.reorderLevel)} ${it.unit}',
+                            style: empMono(12.5, weight: FontWeight.w600, color: empInk),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                );
+              }),
+            ),
+          ),
+        if (catalogAll.length > catalogList.length) ...[
+          const SizedBox(height: 12),
+          OutlinedButton(
+            onPressed: () => setState(
+              () => _catalogVisibleLimit += _catalogPageSize,
+            ),
+            style: empOutlineButton(height: 40),
+            child: Text(
+              'Show more (${catalogAll.length - catalogList.length} remaining)',
+            ),
+          ),
+        ],
       ],
     );
   }

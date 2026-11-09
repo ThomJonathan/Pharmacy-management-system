@@ -1,6 +1,8 @@
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../../core/quantityUnit.dart';
+
 // ============================================================================
 // CASHIER STOCK — branch stock list + receive flow for staff with access.
 //   Receiving goes through receive_stock_delivery() (one atomic call).
@@ -45,6 +47,34 @@ class CatalogOption {
   final String id;
   final String name;
   const CatalogOption({required this.id, required this.name});
+}
+
+class EmployeeCatalogItem {
+  final String id;
+  final String name;
+  final String category;
+  final String unit;
+  final double reorderLevel;
+  final double quantityStep;
+  final bool requiresPrescription;
+  final String businessTypeId;
+  final String businessTypeName;
+  final bool isActive;
+  final List<QtyUnit> units;
+
+  const EmployeeCatalogItem({
+    required this.id,
+    required this.name,
+    required this.category,
+    required this.unit,
+    required this.reorderLevel,
+    this.quantityStep = 1,
+    this.requiresPrescription = false,
+    required this.businessTypeId,
+    required this.businessTypeName,
+    this.isActive = true,
+    this.units = const [],
+  });
 }
 
 class ExistingCatalogMatch {
@@ -176,6 +206,36 @@ class CashierStockRepository {
     if (query.trim().isNotEmpty) q = q.ilike('name', '%${query.trim()}%');
     final rows = await q.order('name').limit(30) as List;
     return rows.map((r) => CatalogOption(id: r['id'] as String, name: (r['name'] as String?) ?? '—')).toList();
+  }
+
+  Future<List<EmployeeCatalogItem>> fetchCatalog({String query = '', bool includeInactive = false}) async {
+    dynamic q = _client.from('items').select(
+      'id, name, category, unit, reorder_level, requires_prescription, is_active, business_type_id, business_types(name), quantity_step, item_units(unit_name, factor)',
+    );
+    if (!includeInactive) q = q.eq('is_active', true);
+    if (query.trim().isNotEmpty) {
+      q = q.ilike('name', '%${query.trim()}%');
+    }
+    final rows = await q.order('name').limit(2000) as List;
+    return rows.map((r) {
+      final bt = r['business_types'];
+      final btName = bt is Map ? (bt['name'] as String? ?? 'Pharmacy') : 'Pharmacy';
+      return EmployeeCatalogItem(
+        id: r['id'] as String,
+        name: (r['name'] as String?) ?? '—',
+        category: (r['category'] as String?)?.trim().isNotEmpty == true
+            ? (r['category'] as String).trim()
+            : 'Uncategorised',
+        unit: (r['unit'] as String?) ?? 'unit',
+        reorderLevel: ((r['reorder_level'] as num?) ?? 10).toDouble(),
+        requiresPrescription: (r['requires_prescription'] as bool?) ?? false,
+        isActive: (r['is_active'] as bool?) ?? true,
+        businessTypeId: (r['business_type_id'] as String?) ?? '',
+        businessTypeName: btName,
+        quantityStep: ((r['quantity_step'] as num?) ?? 1).toDouble(),
+        units: parseQtyUnits(r['item_units']),
+      );
+    }).toList();
   }
 
   /// Exact (case-insensitive) name match already in the catalog, for the

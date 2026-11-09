@@ -175,11 +175,15 @@ _MovementMeta _movementMeta(String type) {
 class _InventoryScreenState extends State<InventoryScreen> {
   final _repo = InventoryRepository();
   final _searchCtrl = TextEditingController();
+  final _catalogSearchCtrl = TextEditingController();
+  final _scrollController = ScrollController();
+  bool _showBackToTop = false;
 
   List<InvBranch> _branches = [];
   List<String> _categories = [];
   String? _branchId; // null = all branches
   String _search = '';
+  String _catalogSearch = '';
   String? _category; // null = all categories
   bool _showInactive = false;
   String? _movementType; // null = all types
@@ -210,12 +214,33 @@ class _InventoryScreenState extends State<InventoryScreen> {
   @override
   void initState() {
     super.initState();
+    _scrollController.addListener(_onScroll);
     _load();
+  }
+
+  void _onScroll() {
+    final show = _scrollController.hasClients && _scrollController.offset > 250;
+    if (show != _showBackToTop) {
+      setState(() => _showBackToTop = show);
+    }
+  }
+
+  void _scrollToTop() {
+    if (_scrollController.hasClients) {
+      _scrollController.animateTo(
+        0,
+        duration: const Duration(milliseconds: 350),
+        curve: Curves.easeOutCubic,
+      );
+    }
   }
 
   @override
   void dispose() {
+    _scrollController.removeListener(_onScroll);
+    _scrollController.dispose();
     _searchCtrl.dispose();
+    _catalogSearchCtrl.dispose();
     super.dispose();
   }
 
@@ -350,7 +375,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
 
   List<CatalogItem> get _visibleCatalog {
     return _cachedVisibleCatalog ??= () {
-      final q = _search.trim().toLowerCase();
+      final q = _catalogSearch.trim().toLowerCase();
       return _catalog.where((c) {
         if (!_showInactive && !c.isActive) return false;
         if (_category != null && c.category != _category) return false;
@@ -358,7 +383,9 @@ class _InventoryScreenState extends State<InventoryScreen> {
           if (!_branchBusinessTypeIds.contains(c.businessTypeId)) return false;
         }
         if (q.isEmpty) return true;
-        return c.name.toLowerCase().contains(q);
+        return c.name.toLowerCase().contains(q) ||
+            c.category.toLowerCase().contains(q) ||
+            c.businessTypeName.toLowerCase().contains(q);
       }).toList();
     }();
   }
@@ -660,6 +687,22 @@ class _InventoryScreenState extends State<InventoryScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: kBg,
+      floatingActionButton: _showBackToTop
+          ? FloatingActionButton.extended(
+              onPressed: _scrollToTop,
+              backgroundColor: kPrimary,
+              foregroundColor: Colors.white,
+              elevation: 4,
+              icon: const Icon(Icons.arrow_upward_rounded, size: 18),
+              label: const Text(
+                'Back to top',
+                style: TextStyle(
+                  fontWeight: FontWeight.w600,
+                  fontSize: 13,
+                ),
+              ),
+            )
+          : null,
       body: SafeArea(
         child: RefreshIndicator(
           color: kPrimary,
@@ -674,6 +717,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
                 child: ConstrainedBox(
                   constraints: const BoxConstraints(maxWidth: 1080),
                   child: CustomScrollView(
+                    controller: _scrollController,
                     physics: const AlwaysScrollableScrollPhysics(),
                     slivers: [
                       SliverPadding(
@@ -1269,40 +1313,147 @@ class _InventoryScreenState extends State<InventoryScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      'Products (${items.length})',
-                      style: sans(
-                        13,
-                        weight: FontWeight.w600,
-                        color: kInkMuted,
+              Container(
+                padding: const EdgeInsets.all(12),
+                margin: const EdgeInsets.only(bottom: 12),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  border: Border.all(color: kBorder),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: LayoutBuilder(
+                  builder: (context, box) {
+                    final compact = box.maxWidth < 560;
+                    final searchField = TextField(
+                      controller: _catalogSearchCtrl,
+                      onChanged: (v) {
+                        setState(() {
+                          _catalogSearch = v;
+                          _invalidateFilterCaches();
+                        });
+                      },
+                      onSubmitted: (v) {
+                        setState(() {
+                          _catalogSearch = v;
+                          _invalidateFilterCaches();
+                        });
+                      },
+                      textInputAction: TextInputAction.search,
+                      style: sans(14, color: kInk),
+                      decoration: fieldDecoration(
+                        'Search catalog items by name or category…',
+                      ).copyWith(
+                        prefixIcon: const Icon(
+                          Icons.search,
+                          size: 18,
+                          color: kInkMuted,
+                        ),
+                        suffixIcon: _catalogSearch.isNotEmpty
+                            ? IconButton(
+                                icon: const Icon(
+                                  Icons.clear,
+                                  size: 18,
+                                  color: kInkMuted,
+                                ),
+                                tooltip: 'Clear search',
+                                onPressed: () {
+                                  _catalogSearchCtrl.clear();
+                                  setState(() {
+                                    _catalogSearch = '';
+                                    _invalidateFilterCaches();
+                                  });
+                                },
+                              )
+                            : null,
                       ),
-                    ),
-                  ),
-                  FilterPill(
-                    label: _showInactive
-                        ? 'Hiding discontinued'
-                        : 'Show discontinued',
-                    selected: _showInactive,
-                    onTap: () {
-                      setState(() {
-                        _showInactive = !_showInactive;
-                        _invalidateFilterCaches();
-                      });
-                    },
-                  ),
-                  const SizedBox(width: 8),
-                  FilledButton.icon(
-                    onPressed: () => _addOrEditItem(),
-                    style: primaryButtonStyle(height: 40),
-                    icon: const Icon(Icons.add, size: 17),
-                    label: const Text('Add item'),
-                  ),
-                ],
+                    );
+                    final searchButton = FilledButton.icon(
+                      onPressed: () {
+                        setState(() {
+                          _catalogSearch = _catalogSearchCtrl.text.trim();
+                          _invalidateFilterCaches();
+                        });
+                      },
+                      style: primaryButtonStyle(height: 42),
+                      icon: const Icon(Icons.search, size: 18),
+                      label: const Text('Search'),
+                    );
+                    final showInactivePill = FilterPill(
+                      label: _showInactive
+                          ? 'Hiding discontinued'
+                          : 'Show discontinued',
+                      selected: _showInactive,
+                      onTap: () {
+                        setState(() {
+                          _showInactive = !_showInactive;
+                          _invalidateFilterCaches();
+                        });
+                      },
+                    );
+                    final addButton = FilledButton.icon(
+                      onPressed: () => _addOrEditItem(),
+                      style: primaryButtonStyle(height: 38),
+                      icon: const Icon(Icons.add, size: 17),
+                      label: const Text('Add item'),
+                    );
+
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        if (compact) ...[
+                          searchField,
+                          const SizedBox(height: 8),
+                          SizedBox(width: double.infinity, child: searchButton),
+                        ] else
+                          Row(
+                            children: [
+                              Expanded(child: searchField),
+                              const SizedBox(width: 8),
+                              searchButton,
+                            ],
+                          ),
+                        const SizedBox(height: 10),
+                        if (compact)
+                          Wrap(
+                            spacing: 8,
+                            runSpacing: 8,
+                            crossAxisAlignment: WrapCrossAlignment.center,
+                            children: [
+                              Text(
+                                'Products (${items.length})',
+                                style: sans(
+                                  13,
+                                  weight: FontWeight.w600,
+                                  color: kInkMuted,
+                                ),
+                              ),
+                              showInactivePill,
+                              addButton,
+                            ],
+                          )
+                        else
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  'Products (${items.length})',
+                                  style: sans(
+                                    13,
+                                    weight: FontWeight.w600,
+                                    color: kInkMuted,
+                                  ),
+                                ),
+                              ),
+                              showInactivePill,
+                              const SizedBox(width: 8),
+                              addButton,
+                            ],
+                          ),
+                      ],
+                    );
+                  },
+                ),
               ),
-              const SizedBox(height: 10),
             ],
           ),
         ),
@@ -1314,13 +1465,27 @@ class _InventoryScreenState extends State<InventoryScreen> {
             child: EmptyState(
               icon: Icons.category_outlined,
               title: 'No products found',
-              message: 'Try a different search or category.',
-              action: FilledButton.icon(
-                onPressed: () => _addOrEditItem(),
-                style: primaryButtonStyle(height: 42),
-                icon: const Icon(Icons.add, size: 17),
-                label: const Text('Add item'),
-              ),
+              message: _catalogSearch.isNotEmpty
+                  ? 'No products matched "$_catalogSearch".'
+                  : 'Try a different search or category.',
+              action: _catalogSearch.isNotEmpty
+                  ? OutlinedButton(
+                      onPressed: () {
+                        _catalogSearchCtrl.clear();
+                        setState(() {
+                          _catalogSearch = '';
+                          _invalidateFilterCaches();
+                        });
+                      },
+                      style: outlineButtonStyle(height: 40),
+                      child: const Text('Clear search'),
+                    )
+                  : FilledButton.icon(
+                      onPressed: () => _addOrEditItem(),
+                      style: primaryButtonStyle(height: 42),
+                      icon: const Icon(Icons.add, size: 17),
+                      label: const Text('Add item'),
+                    ),
             ),
           ),
         )
@@ -1545,9 +1710,68 @@ class _InventoryScreenState extends State<InventoryScreen> {
         children: [
           branchDropdown,
           const SizedBox(width: 10),
+          // The catalog tab has its own dedicated search toolbar; showing the
+          // global stock search here too duplicated the field and made it
+          // unclear which one filtered the catalog.
+          if (_tab != 5) ...[
+            Expanded(
+              child: SearchField(
+                hint: 'Search item, batch or branch…',
+                controller: _searchCtrl,
+                onChanged: (v) {
+                  setState(() {
+                    _search = v;
+                    _invalidateFilterCaches();
+                  });
+                },
+              ),
+            ),
+            const SizedBox(width: 10),
+          ],
+          categoryDropdown,
+        ],
+      );
+    }
+    // Mobile: search + Filters button; branch/category live in a sheet.
+    final activeFilters =
+        (_branchId != null ? 1 : 0) + (_category != null ? 1 : 0);
+    final filtersButton = OutlinedButton.icon(
+      onPressed: () async {
+        final res = await showAdaptiveSheet<_FilterResult>(
+          context,
+          builder: (_) => _FiltersSheet(
+            branches: _branches,
+            categories: _categories,
+            branchId: _branchId,
+            category: _category,
+          ),
+        );
+        if (res != null && mounted) {
+          setState(() {
+            _branchId = res.branchId;
+            _category = res.category;
+            _invalidateFilterCaches();
+          });
+          if (res.branchChanged) await _load();
+        }
+      },
+      style: outlineButtonStyle(height: 46),
+      icon: Badge(
+        isLabelVisible: activeFilters > 0,
+        label: Text('$activeFilters'),
+        child: const Icon(Icons.tune_outlined, size: 18),
+      ),
+      label: const Text('Filters'),
+    );
+    return Row(
+      mainAxisAlignment: _tab == 5
+          ? MainAxisAlignment.end
+          : MainAxisAlignment.start,
+      children: [
+        if (_tab != 5) ...[
           Expanded(
             child: SearchField(
-              hint: 'Search item, batch or branch…',
+              hint: 'Search stock…',
               controller: _searchCtrl,
               onChanged: (v) {
                 setState(() {
@@ -1558,56 +1782,8 @@ class _InventoryScreenState extends State<InventoryScreen> {
             ),
           ),
           const SizedBox(width: 10),
-          categoryDropdown,
         ],
-      );
-    }
-    // Mobile: search + Filters button; branch/category live in a sheet.
-    final activeFilters =
-        (_branchId != null ? 1 : 0) + (_category != null ? 1 : 0);
-    return Row(
-      children: [
-        Expanded(
-          child: SearchField(
-            hint: 'Search stock…',
-            controller: _searchCtrl,
-            onChanged: (v) {
-              setState(() {
-                _search = v;
-                _invalidateFilterCaches();
-              });
-            },
-          ),
-        ),
-        const SizedBox(width: 10),
-        OutlinedButton.icon(
-          onPressed: () async {
-            final res = await showAdaptiveSheet<_FilterResult>(
-              context,
-              builder: (_) => _FiltersSheet(
-                branches: _branches,
-                categories: _categories,
-                branchId: _branchId,
-                category: _category,
-              ),
-            );
-            if (res != null && mounted) {
-              setState(() {
-                _branchId = res.branchId;
-                _category = res.category;
-                _invalidateFilterCaches();
-              });
-              if (res.branchChanged) await _load();
-            }
-          },
-          style: outlineButtonStyle(height: 46),
-          icon: Badge(
-            isLabelVisible: activeFilters > 0,
-            label: Text('$activeFilters'),
-            child: const Icon(Icons.tune_outlined, size: 18),
-          ),
-          label: const Text('Filters'),
-        ),
+        filtersButton,
       ],
     );
   }

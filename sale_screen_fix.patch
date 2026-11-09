@@ -1,0 +1,368 @@
+diff --git a/lib/database/schema.sql b/lib/database/schema.sql
+index 1fdfa5c..574cb27 100644
+--- a/lib/database/schema.sql
++++ b/lib/database/schema.sql
+@@ -234,6 +234,7 @@ CREATE TABLE sale_items (
+                             item_id       UUID NOT NULL REFERENCES items(id),
+                             inventory_id  UUID NOT NULL REFERENCES inventory(id), -- which batch was drawn (FEFO)
+                             quantity      NUMERIC(12,2) NOT NULL CHECK (quantity > 0),
++                            unit          TEXT,                                  -- unit the cashier sold in, e.g. "bottle"
+                             unit_price    NUMERIC(12,2) NOT NULL,   -- retail or wholesale price charged
+                             unit_cost     NUMERIC(12,2) NOT NULL,   -- copied from inventory.buying_price at sale time
+                             subtotal      NUMERIC(14,2) NOT NULL,
+@@ -2751,7 +2752,7 @@ SELECT jsonb_build_object(
+                'balance_due',     s.total_amount - s.amount_paid,
+                'items', COALESCE((
+                                      SELECT jsonb_agg(jsonb_build_object(
+-                                                              'name', i.name, 'unit', i.unit,
++                                                              'name', i.name, 'unit', COALESCE(si.unit, i.unit),
+                                                               'quantity', si.quantity,
+                                                               'unit_price', si.unit_price, 'subtotal', si.subtotal)
+                                                           ORDER BY i.name, si.id)
+diff --git a/lib/screens/employer/saleRepo.dart b/lib/screens/employer/saleRepo.dart
+index d5947d9..84e8280 100644
+--- a/lib/screens/employer/saleRepo.dart
++++ b/lib/screens/employer/saleRepo.dart
+@@ -100,20 +100,18 @@ class SaleRepository {
+ 
+   /// Items with their sellable quantity at [branchId]. Expired batches and
+   /// empty stock count as zero (greyed out, cannot be added).
++  ///
++  /// The rich select (quantity_step + item_units) and v_sellable_stock are
++  /// optional infrastructure: if a database is behind the migrations, the
++  /// sale screen used to fail its whole query and show an empty catalogue.
++  /// We therefore retry with the base columns and, if the view is missing,
++  /// derive availability from inventory directly.
+   Future<List<SaleItem>> searchItems({required String branchId, String query = '', String? category}) async {
+-    dynamic q = _client.from('items').select('id, name, category, unit, quantity_step, item_units(unit_name, factor)').eq('is_active', true);
+-    if (query.trim().isNotEmpty) q = q.ilike('name', '%${query.trim()}%');
+-    if (category != null) q = q.eq('category', category);
+-    final items = await q.order('name').limit(60) as List;
++    final items = await _fetchItemRows(query: query, category: category);
+     if (items.isEmpty) return [];
+ 
+     final ids = items.map((r) => r['id'] as String).toList();
+-    final stock = await _client
+-        .from('v_sellable_stock')
+-        .select('item_id, sellable_quantity, retail_price, wholesale_price')
+-        .eq('branch_id', branchId)
+-        .inFilter('item_id', ids)
+-        .limit(2000) as List;
++    final stock = await _fetchStockRows(branchId, ids);
+     final byItem = <String, Map>{};
+     for (final r in stock) {
+       byItem[r['item_id'] as String] = r as Map;
+@@ -146,6 +144,110 @@ class SaleRepository {
+     return out;
+   }
+ 
++  Future<List> _fetchItemRows({required String query, String? category}) async {
++    dynamic build({required bool rich}) {
++      dynamic q = _client
++          .from('items')
++          .select(
++            rich
++                ? 'id, name, category, unit, quantity_step, item_units(unit_name, factor)'
++                : 'id, name, category, unit',
++          )
++          .eq('is_active', true);
++      final clean = query.trim();
++      if (clean.isNotEmpty) q = q.ilike('name', '%$clean%');
++      if (category != null) q = q.eq('category', category);
++      return q.order('name').limit(60);
++    }
++
++    try {
++      return await build(rich: true) as List;
++    } on PostgrestException catch (e) {
++      if (!_isOptionalSchemaError(e)) rethrow;
++      return await build(rich: false) as List;
++    }
++  }
++
++  Future<List> _fetchStockRows(String branchId, List<String> ids) async {
++    try {
++      return await _client
++          .from('v_sellable_stock')
++          .select('item_id, sellable_quantity, retail_price, wholesale_price')
++          .eq('branch_id', branchId)
++          .inFilter('item_id', ids)
++          .limit(2000) as List;
++    } on PostgrestException catch (e) {
++      if (!_isOptionalSchemaError(e)) rethrow;
++      return _stockFromInventory(branchId, ids);
++    }
++  }
++
++  /// Fallback used only when v_sellable_stock is not deployed yet. Mirrors its
++  /// rules: ignore expired batches, sum available quantity per item, and show
++  /// the lowest current selling price.
++  Future<List<Map<String, dynamic>>> _stockFromInventory(
++    String branchId,
++    List<String> ids,
++  ) async {
++    final now = DateTime.now();
++    final today =
++        '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
++    final rows = await _client
++        .from('inventory')
++        .select('item_id, quantity_available, retail_price, wholesale_price, expiry_date')
++        .eq('branch_id', branchId)
++        .inFilter('item_id', ids)
++        .gt('quantity_available', 0)
++        .limit(5000) as List;
++
++    final out = <String, Map<String, dynamic>>{};
++    for (final r in rows) {
++      final expiry = r['expiry_date'] as String?;
++      if (expiry != null && expiry.compareTo(today) < 0) continue;
++      final id = r['item_id'] as String;
++      final qty = ((r['quantity_available'] as num?) ?? 0).toDouble();
++      final retail = ((r['retail_price'] as num?) ?? 0).toDouble();
++      final wholesale = (r['wholesale_price'] as num?)?.toDouble();
++      final current = out[id];
++      if (current == null) {
++        out[id] = {
++          'item_id': id,
++          'sellable_quantity': qty,
++          'retail_price': retail,
++          'wholesale_price': wholesale,
++        };
++      } else {
++        current['sellable_quantity'] =
++            (current['sellable_quantity'] as double) + qty;
++        if (retail < (current['retail_price'] as double)) {
++          current['retail_price'] = retail;
++        }
++        final currentWholesale = current['wholesale_price'] as double?;
++        if (wholesale != null &&
++            (currentWholesale == null || wholesale < currentWholesale)) {
++          current['wholesale_price'] = wholesale;
++        }
++      }
++    }
++    return out.values.toList();
++  }
++
++  /// Postgres/PostgREST errors that mean "this database is missing the newer
++  /// optional column/view", not "the query is wrong":
++  ///   42703     undefined column (quantity_step, sale_items.unit, ...)
++  ///   PGRST200  no relationship between items and item_units
++  ///   PGRST204  column missing from PostgREST's schema cache
++  ///   PGRST205  table/view missing from PostgREST's schema cache
++  bool _isOptionalSchemaError(PostgrestException e) {
++    const codes = {'42703', 'PGRST200', 'PGRST204', 'PGRST205'};
++    if (codes.contains(e.code)) return true;
++    final m = e.message.toLowerCase();
++    return m.contains('quantity_step') ||
++        m.contains('item_units') ||
++        m.contains('v_sellable_stock') ||
++        m.contains('schema cache');
++  }
++
+   Future<List<SaleCustomer>> searchCustomers({required String branchId, String query = ''}) async {
+     dynamic q = _client.from('customers').select('id, name, phone, current_balance').eq('branch_id', branchId);
+     if (query.trim().isNotEmpty) q = q.ilike('name', '%${query.trim()}%');
+diff --git a/lib/screens/employer/saleScreen.dart b/lib/screens/employer/saleScreen.dart
+index 6c8ebc4..3b1acf6 100644
+--- a/lib/screens/employer/saleScreen.dart
++++ b/lib/screens/employer/saleScreen.dart
+@@ -2,6 +2,7 @@ import 'dart:async';
+ 
+ import 'package:flutter/material.dart';
+ import 'package:pdf/pdf.dart';
++import 'package:supabase_flutter/supabase_flutter.dart';
+ 
+ import '../../appPrefs.dart';
+ import '../../appUser.dart';
+@@ -62,6 +63,7 @@ class _SaleScreenState extends State<SaleScreen> {
+   String? _category;
+   List<SaleItem> _items = [];
+   bool _itemsLoading = true;
++  String? _itemsError;
+ 
+   final Map<String, _Line> _cart = {};
+   String _saleType = 'retail'; // retail | wholesale
+@@ -154,27 +156,56 @@ class _SaleScreenState extends State<SaleScreen> {
+       setState(() {
+         _items = [];
+         _itemsLoading = false;
++        _itemsError = null;
+       });
+       return;
+     }
+-    if (!silent) setState(() => _itemsLoading = true);
++    if (!silent) {
++      setState(() {
++        _itemsLoading = true;
++        _itemsError = null;
++      });
++    }
+     try {
+-      final res = await _repo.searchItems(
+-        branchId: bid,
+-        query: _search,
+-        category: _category,
+-      );
++      final res = await _repo
++          .searchItems(branchId: bid, query: _search, category: _category)
++          .timeout(const Duration(seconds: 20));
+       if (!mounted) return;
+       setState(() {
+         _items = res;
+         _itemsLoading = false;
++        _itemsError = null;
+       });
+-    } catch (_) {
++    } catch (e) {
+       if (!mounted) return;
+-      setState(() => _itemsLoading = false);
++      debugPrint('Sale items failed to load: $e');
++      setState(() {
++        _itemsLoading = false;
++        _itemsError = _itemsErrorText(e);
++      });
+     }
+   }
+ 
++  /// The sale list used to fail silently: any RLS/schema/network error just
++  /// left an empty list and the UI said "No items". Show the real reason so
++  /// it can be fixed instead of looking like an empty catalogue.
++  String _itemsErrorText(Object e) {
++    if (e is TimeoutException) {
++      return 'Loading items took too long. Check your connection and try again.';
++    }
++    if (e is SaleException) return e.message;
++    if (e is PostgrestException) {
++      final msg = e.message.trim();
++      if (msg.contains('branch_runs_business_type')) {
++        return 'The database is missing an execute permission on '
++            'branch_runs_business_type, so the catalogue is hidden. '
++            'Run lib/database/fix_sale_screen.sql in Supabase.';
++      }
++      return msg.isEmpty ? 'Could not load items.' : msg;
++    }
++    return e.toString();
++  }
++
+   Future<void> _loadHistory({bool silent = false}) async {
+     final bid = _branchId;
+     if (bid == null) return;
+@@ -944,50 +975,51 @@ class _SaleScreenState extends State<SaleScreen> {
+ 
+   Widget _desktop() {
+     final selling = _branchId != null;
+-    return IntrinsicHeight(
+-      child: Row(
+-        crossAxisAlignment: CrossAxisAlignment.start,
+-        children: [
+-          Expanded(
+-            flex: 3,
+-            child: Column(
+-              crossAxisAlignment: CrossAxisAlignment.stretch,
+-              children: [
+-                _searchRow(autofocus: true),
+-                const SizedBox(height: 10),
+-                _categoryChips(),
+-                const SizedBox(height: 10),
+-                _resultsList(),
+-              ],
+-            ),
++    // No IntrinsicHeight here: the results panel is a shrink-wrapped
++    // ListView, and a viewport cannot report intrinsic dimensions. Wrapping
++    // this Row in IntrinsicHeight made the item list collapse to zero height
++    // (or throw in debug), which is why the sale page looked empty.
++    // The outer SingleChildScrollView already handles page scrolling.
++    return Row(
++      crossAxisAlignment: CrossAxisAlignment.start,
++      children: [
++        Expanded(
++          flex: 3,
++          child: Column(
++            crossAxisAlignment: CrossAxisAlignment.stretch,
++            children: [
++              _searchRow(autofocus: true),
++              const SizedBox(height: 10),
++              _categoryChips(),
++              const SizedBox(height: 10),
++              _resultsList(),
++            ],
+           ),
+-          const SizedBox(width: 16),
+-          Expanded(
+-            flex: 2,
+-            child: Column(
+-              crossAxisAlignment: CrossAxisAlignment.stretch,
+-              children: [
+-                Expanded(
+-                  child: SingleChildScrollView(child: _checkoutCard(selling)),
+-                ),
+-                const SizedBox(height: 10),
+-                _completeButton(selling),
+-                if (_formError != null) ...[
+-                  const SizedBox(height: 8),
+-                  Text(
+-                    _formError!,
+-                    style: empSans(
+-                      12.5,
+-                      weight: FontWeight.w600,
+-                      color: empDanger,
+-                    ),
++        ),
++        const SizedBox(width: 16),
++        Expanded(
++          flex: 2,
++          child: Column(
++            crossAxisAlignment: CrossAxisAlignment.stretch,
++            children: [
++              _checkoutCard(selling),
++              const SizedBox(height: 10),
++              _completeButton(selling),
++              if (_formError != null) ...[
++                const SizedBox(height: 8),
++                Text(
++                  _formError!,
++                  style: empSans(
++                    12.5,
++                    weight: FontWeight.w600,
++                    color: empDanger,
+                   ),
+-                ],
++                ),
+               ],
+-            ),
++            ],
+           ),
+-        ],
+-      ),
++        ),
++      ],
+     );
+   }
+ 
+@@ -1092,6 +1124,25 @@ class _SaleScreenState extends State<SaleScreen> {
+         child: Center(child: CircularProgressIndicator(color: empPrimary)),
+       );
+     }
++    if (_itemsError != null) {
++      return EmpEmpty(
++        icon: Icons.cloud_off_outlined,
++        title: 'Could not load items',
++        message: _itemsError!,
++        action: OutlinedButton.icon(
++          onPressed: () => _searchItems(),
++          icon: const Icon(Icons.refresh, size: 17),
++          label: const Text('Try again'),
++          style: OutlinedButton.styleFrom(
++            foregroundColor: empPrimary,
++            side: const BorderSide(color: empBorder),
++            shape: RoundedRectangleBorder(
++              borderRadius: BorderRadius.circular(4),
++            ),
++          ),
++        ),
++      );
++    }
+     if (_items.isEmpty) {
+       return EmpEmpty(
+         icon: Icons.search_off_outlined,
