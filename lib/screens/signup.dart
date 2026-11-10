@@ -72,7 +72,7 @@ class _SignupScreenState extends State<SignupScreen> {
   Widget build(BuildContext context) {
     return AuthScaffold(
       title: 'Create your account',
-      subtitle: 'Set up staff access for Stocka',
+      subtitle: 'Set up staff access for Tumaini Investments',
       form: Form(
         key: _formKey,
         child: Column(

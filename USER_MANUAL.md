@@ -1,4 +1,4 @@
-# Stocka — Comprehensive User Manual & Operations Guide
+# Tumaini Investments — Comprehensive User Manual & Operations Guide
 
 > **System Version:** 1.0.0  
 > **Platform Support:** Desktop (macOS, Windows, Linux), Mobile (Android, iOS), Web  
@@ -8,7 +8,7 @@
 ---
 
 ## Table of Contents
-1. [Introduction to Stocka](#1-introduction-to-stocka)
+1. [Introduction to Tumaini Investments](#1-introduction-to-tumaini-investments)
 2. [User Roles & Security Architecture](#2-user-roles--security-architecture)
 3. [Account Setup & Getting Started](#3-account-setup--getting-started)
 4. [Point of Sale (POS) & Counter Operations](#4-point-of-sale-pos--counter-operations)
@@ -22,15 +22,15 @@
 
 ---
 
-## 1. Introduction to Stocka
+## 1. Introduction to Tumaini Investments
 
-**Stocka** is an enterprise-grade Pharmacy and Retail Point of Sale (POS), Inventory Control, and Financial Ledger system. It is engineered specifically for multi-branch environments where accurate batch tracking, expiry monitoring, strict cash-drawer control, and audit compliance are vital.
+**Tumaini Investments** is an enterprise-grade Pharmacy and Retail Point of Sale (POS), Inventory Control, and Financial Ledger system. It is engineered specifically for multi-branch environments where accurate batch tracking, expiry monitoring, strict cash-drawer control, and audit compliance are vital.
 
 ### Core Architecture Highlights
 
 ```mermaid
 flowchart TD
-    CentralDB[(Stocka Central Supabase DB)]
+    CentralDB[(Tumaini Investments Central Supabase DB)]
     
     subgraph AdminControl ["Admin Control Center"]
         A1[Multi-Branch Oversight]
@@ -58,7 +58,7 @@ flowchart TD
     CentralDB <--> BranchB
 ```
 
-* **First-Expired, First-Out (FEFO) Automation:** Stocka prevents dispensing expired items by default. The system automatically prioritizes stock batches with the earliest expiry dates during counter sales.
+* **First-Expired, First-Out (FEFO) Automation:** Tumaini Investments prevents dispensing expired items by default. The system automatically prioritizes stock batches with the earliest expiry dates during counter sales.
 * **Multi-Unit Inventory & Sales:** Stock can be tracked and sold flexibly across multiple packaging sizes (e.g., individual tablets, blister strips, or complete 100-count boxes).
 * **Immutable Audit Ledger:** Every stock intake, sale, refund, or adjustment is permanently registered with a traceable movement record and the identity of the staff member responsible.
 * **Double-Entry Financial Triggers:** Customer credit debts and supplier balances are maintained automatically via database triggers, eliminating manual record sync discrepancies.
@@ -68,7 +68,7 @@ flowchart TD
 
 ## 2. User Roles & Security Architecture
 
-Access in Stocka is governed by strict Role-Based Access Control (RBAC).
+Access in Tumaini Investments is governed by strict Role-Based Access Control (RBAC).
 
 | Capability | Administrator (`admin`) | Branch Manager (`manager`) | Cashier (`cashier`) | Stock Controller (`stock_controller`) |
 | :--- | :---: | :---: | :---: | :---: |
@@ -88,7 +88,7 @@ Access in Stocka is governed by strict Role-Based Access Control (RBAC).
 ## 3. Account Setup & Getting Started
 
 ### 3.1 Staff Registration
-1. Launch **Stocka** on the workstation or mobile tablet.
+1. Launch **Tumaini Investments** on the workstation or mobile tablet.
 2. On the login screen, click **Set up staff access**.
 3. Fill in the required details:
    * **Full Name:** Official employee name.
@@ -123,8 +123,8 @@ The POS screen (`Sale` tab) allows fast, reliable counter checkout in five simpl
 sequenceDiagram
     autonumber
     actor Cashier
-    participant POS as Stocka POS Terminal
-    participant DB as Stocka Database
+    participant POS as Tumaini Investments POS Terminal
+    participant DB as Tumaini Investments Database
     Cashier->>POS: Search product & select sellable unit
     POS->>Cashier: Display live FEFO availability & unit price
     Cashier->>POS: Add to basket & pick sale type (Retail/Wholesale)
@@ -148,7 +148,7 @@ sequenceDiagram
   2. Select the desired selling unit.
   3. The system automatically recalculates the unit price and updates the quantity stepper intervals.
 * Increment or decrement quantities using the `+` / `-` buttons, or type the exact quantity directly into the input box.
-* Stocka enforces availability constraints in real time; cashiers cannot add more units than are physically available in active, unexpired batches.
+* Tumaini Investments enforces availability constraints in real time; cashiers cannot add more units than are physically available in active, unexpired batches.
 
 ### 4.3 Step 3: Retail vs. Wholesale Pricing
 * Toggle between **Retail** and **Wholesale** at the top of the transaction summary.
@@ -159,8 +159,8 @@ sequenceDiagram
 * **Credit / Debt Sales:** Selecting an existing registered customer (or creating one on the spot via **+ Add Customer**) is mandatory so debts can be tracked.
 
 ### 4.5 Step 5: Payment Processing
-Stocka supports five payment workflows:
-1. **Cash:** Enter the cash tendered by the customer. Stocka calculates and displays the exact change due.
+Tumaini Investments supports five payment workflows:
+1. **Cash:** Enter the cash tendered by the customer. Tumaini Investments calculates and displays the exact change due.
 2. **Airtel Money:** Customer transfers funds via Airtel Money. Cashier verifies the transaction confirmation code and selects Airtel Money.
 3. **TNM Mpamba:** Customer transfers funds via TNM Mpamba. Cashier confirms receipt and selects TNM Mpamba.
 4. **Card:** Customer pays via POS card terminal.
@@ -181,14 +181,14 @@ Stocka supports five payment workflows:
 
 ## 5. Inventory, Batches & FEFO Management
 
-Unlike generic retail software that groups all inventory into a single count, Stocka tracks stock at the individual **Batch** level.
+Unlike generic retail software that groups all inventory into a single count, Tumaini Investments tracks stock at the individual **Batch** level.
 
 ### 5.1 Why Batch Tracking Matters
 In healthcare and pharmaceutical retail, two deliveries of the same drug often arrive with different buying costs and different expiry dates:
 * **Batch A:** Expiry March 2027, Buying Price MK 150
 * **Batch B:** Expiry October 2028, Buying Price MK 180
 
-Stocka maintains these as separate inventory records. When a cashier sells the drug:
+Tumaini Investments maintains these as separate inventory records. When a cashier sells the drug:
 1. The system automatically depletes **Batch A** first.
 2. Only after Batch A is exhausted does it draw from Batch B.
 3. Batches that have reached or passed today's date are excluded from sellable stock.
@@ -217,7 +217,7 @@ Staff with approved stock access can log new deliveries:
 
 ## 6. Access Requests & Security Approvals
 
-To maintain administrative integrity without bottlenecking daily store operations, Stocka utilizes a temporary **Privilege Escalation Workflow**.
+To maintain administrative integrity without bottlenecking daily store operations, Tumaini Investments utilizes a temporary **Privilege Escalation Workflow**.
 
 ```mermaid
 stateDiagram-v2
@@ -338,7 +338,7 @@ Filter by **Today, Yesterday, This Week, Last 7 Days, This Month, Last 30 Days,*
 
 ## 10. Hardware, Receipt Printing & Preferences
 
-Stocka includes tailored peripheral and receipt configurations in the **Settings** tab.
+Tumaini Investments includes tailored peripheral and receipt configurations in the **Settings** tab.
 
 ### 10.1 Receipt Paper Formats
 * **80mm Roll (Thermal POS):** Standard receipt printer format with full itemization, business header, date/time, and cashier name.
@@ -357,7 +357,7 @@ Stocka includes tailored peripheral and receipt configurations in the **Settings
 > **Answer:** Your registration was successful, but security rules prevent access until an Administrator activates your account and links you to an active branch. Contact your shop owner or manager to approve you in the **Users** screen.
 
 ### Q2: Why is a product greyed out in the POS even though we have boxes on the shelf?
-> **Answer:** Stocka's safety engine enforces two checks:
+> **Answer:** Tumaini Investments' safety engine enforces two checks:
 > 1. Available quantity in the system may be 0.
 > 2. The stock batch on the system may have passed its **Expiry Date**. Expired medicines are quarantined by the system and cannot be sold. Check the **Expiry** tab in Inventory.
 
@@ -371,9 +371,9 @@ Stocka includes tailored peripheral and receipt configurations in the **Settings
 ### Q4: I need to receive a delivery, but the "Receive Delivery" button is locked.
 > **Answer:** Tap **Request Access** on the Stock screen. Once your Administrator approves the request from their dashboard, the receiving form will unlock immediately.
 
-### Q5: Can I use Stocka when the internet goes down?
-> **Answer:** Stocka syncs in real time with the secure cloud database to maintain multi-branch consistency and prevent duplicate batch sales. If connectivity drops, restore network access (via mobile hotspot or Wi-Fi) to resume transactions.
+### Q5: Can I use Tumaini Investments when the internet goes down?
+> **Answer:** Tumaini Investments syncs in real time with the secure cloud database to maintain multi-branch consistency and prevent duplicate batch sales. If connectivity drops, restore network access (via mobile hotspot or Wi-Fi) to resume transactions.
 
 ---
 
-*Manual published by Jaytech Innovations for Stocka. All rights reserved.*
+*Manual published by Jaytech Innovations for Tumaini Investments. All rights reserved.*

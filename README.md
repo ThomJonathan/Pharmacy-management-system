@@ -1,4 +1,4 @@
-# Stocka
+# Tumaini Investments
 
 A new Flutter project.
 
