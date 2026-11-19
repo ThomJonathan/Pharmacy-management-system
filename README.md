@@ -14,7 +14,6 @@ The interface adapts to screen size: a bottom navigation bar on mobile and a sid
 
 Try the web version here: **https://stocka-two.vercel.app**
 
-The demo runs on sample data, so feel free to explore. Please do not enter real patient or business information.
 
 ## Key Features
 
